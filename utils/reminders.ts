@@ -1,4 +1,5 @@
 import { runAppleScript } from "run-applescript";
+import { escapeAppleScriptString } from "./applescript-utils.js";
 
 // Configuration
 const CONFIG = {
@@ -241,9 +242,9 @@ async function createReminder(
 			throw new Error("Reminder name cannot be empty");
 		}
 
-		const cleanName = name.replace(/\"/g, '\\"');
-		const cleanListName = listName.replace(/\"/g, '\\"');
-		const cleanNotes = notes ? notes.replace(/\"/g, '\\"') : "";
+		const cleanName = escapeAppleScriptString(name);
+		const cleanListName = escapeAppleScriptString(listName);
+		const cleanNotes = notes ? escapeAppleScriptString(notes) : "";
 
 		const script = `
 tell application "Reminders"

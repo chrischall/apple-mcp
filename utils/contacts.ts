@@ -1,4 +1,5 @@
 import { runAppleScript } from "run-applescript";
+import { escapeAppleScriptString } from "./applescript-utils.js";
 
 // Configuration
 const CONFIG = {
@@ -137,7 +138,7 @@ async function findNumber(name: string): Promise<string[]> {
 			return [];
 		}
 
-		const searchName = name.toLowerCase().trim();
+		const searchName = escapeAppleScriptString(name.toLowerCase().trim());
 
 		// First try exact and partial matching with AppleScript
 		const script = `

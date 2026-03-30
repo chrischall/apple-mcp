@@ -1,9 +1,30 @@
 import {runAppleScript} from 'run-applescript';
-import { promisify } from 'node:util';
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
+import { normalizePhoneNumber, decodeAttributedBody } from './phone-utils.js';
 
-const execAsync = promisify(exec);
+/**
+ * Runs a sqlite3 query using spawn (no shell) to eliminate shell-injection risk.
+ * The query string and db path are passed as direct process arguments, not
+ * interpreted by /bin/sh.
+ */
+function runSqlite(dbPath: string, query: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    const child = spawn('sqlite3', ['-json', dbPath, query]);
+    child.stdout.on('data', (d: Buffer) => { stdout += d; });
+    child.stderr.on('data', (d: Buffer) => { stderr += d; });
+    child.on('close', (code: number | null) => {
+      if (code !== 0 && code !== null) {
+        reject(new Error(`sqlite3 exited with code ${code}: ${stderr.trim()}`));
+      } else {
+        resolve(stdout);
+      }
+    });
+    child.on('error', reject);
+  });
+}
 
 // Configuration
 const CONFIG = {
@@ -36,45 +57,14 @@ async function retryOperation<T>(operation: () => Promise<T>, retries = MAX_RETR
     }
 }
 
-function normalizePhoneNumber(phone: string): string[] {
-    // Remove all non-numeric characters except +
-    const cleaned = phone.replace(/[^0-9+]/g, '');
-    
-    // If it's already in the correct format (+1XXXXXXXXXX), return just that
-    if (/^\+1\d{10}$/.test(cleaned)) {
-        return [cleaned];
-    }
-    
-    // If it starts with 1 and has 11 digits total
-    if (/^1\d{10}$/.test(cleaned)) {
-        return [`+${cleaned}`];
-    }
-    
-    // If it's 10 digits
-    if (/^\d{10}$/.test(cleaned)) {
-        return [`+1${cleaned}`];
-    }
-    
-    // If none of the above match, try multiple formats
-    const formats = new Set<string>();
-    
-    if (cleaned.startsWith('+1')) {
-        formats.add(cleaned);
-    } else if (cleaned.startsWith('1')) {
-        formats.add(`+${cleaned}`);
-    } else {
-        formats.add(`+1${cleaned}`);
-    }
-    
-    return Array.from(formats);
-}
 
 async function sendMessage(phoneNumber: string, message: string) {
-    const escapedMessage = message.replace(/"/g, '\\"');
+    const escapedMessage = message.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const escapedPhone = phoneNumber.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const result = await runAppleScript(`
 tell application "Messages"
     set targetService to 1st service whose service type = iMessage
-    set targetBuddy to buddy "${phoneNumber}"
+    set targetBuddy to buddy "${escapedPhone}"
     send "${escapedMessage}" to targetBuddy
 end tell`);
     return result;
@@ -94,8 +84,8 @@ async function checkMessagesDBAccess(): Promise<boolean> {
         const dbPath = `${process.env.HOME}/Library/Messages/chat.db`;
         await access(dbPath);
         
-        // Additional check - try to query the database
-        await execAsync(`sqlite3 "${dbPath}" "SELECT 1;"`);
+        // Additional check - try to query the database (no shell, spawn-based)
+        await runSqlite(dbPath, 'SELECT 1;');
         
         return true;
     } catch (error) {
@@ -150,86 +140,6 @@ async function requestMessagesAccess(): Promise<{ hasAccess: boolean; message: s
     }
 }
 
-function decodeAttributedBody(hexString: string): { text: string; url?: string } {
-    try {
-        // Convert hex to buffer
-        const buffer = Buffer.from(hexString, 'hex');
-        const content = buffer.toString();
-        
-        // Common patterns in attributedBody
-        const patterns = [
-            /NSString">(.*?)</,           // Basic NSString pattern
-            /NSString">([^<]+)/,          // NSString without closing tag
-            /NSNumber">\d+<.*?NSString">(.*?)</,  // NSNumber followed by NSString
-            /NSArray">.*?NSString">(.*?)</,       // NSString within NSArray
-            /"string":\s*"([^"]+)"/,      // JSON-style string
-            /text[^>]*>(.*?)</,           // Generic XML-style text
-            /message>(.*?)</              // Generic message content
-        ];
-        
-        // Try each pattern
-        let text = '';
-        for (const pattern of patterns) {
-            const match = content.match(pattern);
-            if (match?.[1]) {
-                text = match[1];
-                if (text.length > 5) { // Only use if we got something substantial
-                    break;
-                }
-            }
-        }
-        
-        // Look for URLs
-        const urlPatterns = [
-            /(https?:\/\/[^\s<"]+)/,      // Standard URLs
-            /NSString">(https?:\/\/[^\s<"]+)/, // URLs in NSString
-            /"url":\s*"(https?:\/\/[^"]+)"/, // URLs in JSON format
-            /link[^>]*>(https?:\/\/[^<]+)/ // URLs in XML-style tags
-        ];
-        
-        let url: string | undefined;
-        for (const pattern of urlPatterns) {
-            const match = content.match(pattern);
-            if (match?.[1]) {
-                url = match[1];
-                break;
-            }
-        }
-        
-        if (!text && !url) {
-            // Try to extract any readable text content
-            const readableText = content
-                .replace(/streamtyped.*?NSString/g, '') // Remove streamtyped header
-                .replace(/NSAttributedString.*?NSString/g, '') // Remove attributed string metadata
-                .replace(/NSDictionary.*?$/g, '') // Remove dictionary metadata
-                .replace(/\+[A-Za-z]+\s/g, '') // Remove +[identifier] patterns
-                .replace(/NSNumber.*?NSValue.*?\*/g, '') // Remove number/value metadata
-                .replace(/[^\x20-\x7E]/g, ' ') // Replace non-printable chars with space
-                .replace(/\s+/g, ' ')          // Normalize whitespace
-                .trim();
-            
-            if (readableText.length > 5) {    // Only use if we got something substantial
-                text = readableText;
-            } else {
-                return { text: '[Message content not readable]' };
-            }
-        }
-
-        // Clean up the found text
-        if (text) {
-            text = text
-                .replace(/^[+\s]+/, '') // Remove leading + and spaces
-                .replace(/\s*iI\s*[A-Z]\s*$/, '') // Remove iI K pattern at end
-                .replace(/\s+/g, ' ') // Normalize whitespace
-                .trim();
-        }
-        
-        return { text: text || url || '', url };
-    } catch (error) {
-        console.error('Error decoding attributedBody:', error);
-        return { text: '[Message content not readable]' };
-    }
-}
 
 async function getAttachmentPaths(messageId: number): Promise<string[]> {
     try {
@@ -241,8 +151,9 @@ async function getAttachmentPaths(messageId: number): Promise<string[]> {
             WHERE message_attachment_join.message_id = ${messageId}
         `;
         
-        const { stdout } = await execAsync(`sqlite3 -json "${process.env.HOME}/Library/Messages/chat.db" "${query}"`);
-        
+        const dbPath = `${process.env.HOME}/Library/Messages/chat.db`;
+        const stdout = await runSqlite(dbPath, query);
+
         if (!stdout.trim()) {
             return [];
         }
@@ -304,10 +215,9 @@ async function readMessages(phoneNumber: string, limit = 10): Promise<Message[]>
         `;
 
         // Execute query with retries
-        const { stdout } = await retryOperation(() => 
-            execAsync(`sqlite3 -json "${process.env.HOME}/Library/Messages/chat.db" "${query}"`)
-        );
-        
+        const dbPath = `${process.env.HOME}/Library/Messages/chat.db`;
+        const stdout = await retryOperation(() => runSqlite(dbPath, query));
+
         if (!stdout.trim()) {
             console.error("No messages found in database for the given phone number");
             return [];
@@ -430,10 +340,9 @@ async function getUnreadMessages(limit = 10): Promise<Message[]> {
         `;
 
         // Execute query with retries
-        const { stdout } = await retryOperation(() => 
-            execAsync(`sqlite3 -json "${process.env.HOME}/Library/Messages/chat.db" "${query}"`)
-        );
-        
+        const dbPath = `${process.env.HOME}/Library/Messages/chat.db`;
+        const stdout = await retryOperation(() => runSqlite(dbPath, query));
+
         if (!stdout.trim()) {
             console.error("No unread messages found");
             return [];

@@ -1,4 +1,5 @@
 import { runAppleScript } from 'run-applescript';
+import { escapeAppleScriptString, formatDateForAppleScript } from './applescript-utils.js';
 
 // Define types for our calendar events
 interface CalendarEvent {
@@ -263,13 +264,18 @@ async function createEvent(
 
         console.error(`createEvent - Attempting to create event: "${title}"`);
 
-        const targetCalendar = calendarName || "Calendar";
-        
+        const targetCalendar = escapeAppleScriptString(calendarName || "Calendar");
+        const escapedTitle = escapeAppleScriptString(title);
+        const escapedLocation = escapeAppleScriptString(location || '');
+        const escapedNotes = escapeAppleScriptString(notes || '');
+        const startDateStr = formatDateForAppleScript(start);
+        const endDateStr = formatDateForAppleScript(end);
+
         const script = `
 tell application "Calendar"
-    set startDate to date "${start.toLocaleString()}"
-    set endDate to date "${end.toLocaleString()}"
-    
+    set startDate to date "${startDateStr}"
+    set endDate to date "${endDateStr}"
+
     -- Find target calendar
     set targetCal to null
     try
@@ -278,19 +284,19 @@ tell application "Calendar"
         -- Use first available calendar
         set targetCal to first calendar
     end try
-    
+
     -- Create the event
     tell targetCal
-        set newEvent to make new event with properties {summary:"${title.replace(/"/g, '\\"')}", start date:startDate, end date:endDate, allday event:${isAllDay}}
-        
-        if "${location || ""}" ≠ "" then
-            set location of newEvent to "${(location || '').replace(/"/g, '\\"')}"
+        set newEvent to make new event with properties {summary:"${escapedTitle}", start date:startDate, end date:endDate, allday event:${isAllDay}}
+
+        if "${escapedLocation}" ≠ "" then
+            set location of newEvent to "${escapedLocation}"
         end if
-        
-        if "${notes || ""}" ≠ "" then
-            set description of newEvent to "${(notes || '').replace(/"/g, '\\"')}"
+
+        if "${escapedNotes}" ≠ "" then
+            set description of newEvent to "${escapedNotes}"
         end if
-        
+
         return uid of newEvent
     end tell
 end tell`;
