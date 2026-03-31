@@ -7,8 +7,8 @@ import { escapeAS, validateId, findMsgScript, appScript } from "./mail-core.js";
 // ---------------------------------------------------------------------------
 
 async function findAndAct(id: string, operation: string): Promise<boolean> {
-  validateId(id);
   try {
+    validateId(id);
     const raw = await runAppleScript(findMsgScript(id, operation));
     return raw.trim() === "ok";
   } catch (error) {
@@ -61,7 +61,6 @@ export async function moveMessage(params: {
   account?: string;
 }): Promise<boolean> {
   const { id, mailbox, account } = params;
-  validateId(id);
 
   const accountClause = account
     ? `mailbox "${escapeAS(mailbox)}" of account "${escapeAS(account)}"`
@@ -88,6 +87,7 @@ export async function moveMessage(params: {
   end try`);
 
   try {
+    validateId(id);
     const raw = await runAppleScript(script);
     return raw.trim() === "ok";
   } catch (error) {
@@ -107,7 +107,6 @@ export async function replyToMessage(params: {
   account?: string;
 }): Promise<boolean> {
   const { id, body, replyAll = false, account } = params;
-  validateId(id);
 
   const safeBody = escapeAS(body);
   const replyAllClause = replyAll ? " with reply to all" : "";
@@ -138,6 +137,7 @@ export async function replyToMessage(params: {
   end try`);
 
   try {
+    validateId(id);
     const raw = await runAppleScript(script);
     return raw.trim() === "ok";
   } catch (error) {
@@ -157,7 +157,6 @@ export async function forwardMessage(params: {
   account?: string;
 }): Promise<boolean> {
   const { id, to, body, account } = params;
-  validateId(id);
 
   const recipientCmds = to
     .map(a => `make new to recipient at end of to recipients of theForward with properties {address:"${escapeAS(a)}"}`)
@@ -194,6 +193,7 @@ export async function forwardMessage(params: {
   end try`);
 
   try {
+    validateId(id);
     const raw = await runAppleScript(script);
     return raw.trim() === "ok";
   } catch (error) {
