@@ -1,2 +1,4 @@
-// utils/mail.ts  (temporary barrel — expanded in Task 14)
-export { default } from "./mail-core.js";
+// utils/mail.ts  (still growing — finalized in Task 14)
+import core from "./mail-core.js";
+import actions from "./mail-actions.js";
+export default { ...core, ...actions };

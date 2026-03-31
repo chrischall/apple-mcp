@@ -92,3 +92,56 @@ describe("mail_send / sendEmail", () => {
       .rejects.toThrow();
   }, 5000);
 });
+
+describe("mail-actions: mark/flag/delete/move", () => {
+  it("markAsRead returns false for non-existent message", async () => {
+    const result = await mailModule.markAsRead("999999999");
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("markAsUnread returns false for non-existent message", async () => {
+    const result = await mailModule.markAsUnread("999999999");
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("flagMessage returns false for non-existent message", async () => {
+    const result = await mailModule.flagMessage("999999999");
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("unflagMessage returns false for non-existent message", async () => {
+    const result = await mailModule.unflagMessage("999999999");
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("deleteMessage returns false for non-existent message", async () => {
+    const result = await mailModule.deleteMessage("999999999");
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("moveMessage returns false for non-existent message", async () => {
+    const result = await mailModule.moveMessage({ id: "999999999", mailbox: "Trash" });
+    expect(result).toBe(false);
+  }, 15000);
+});
+
+describe("mail-actions: reply/forward/draft", () => {
+  it("replyToMessage returns false for non-existent message", async () => {
+    const result = await mailModule.replyToMessage({ id: "999999999", body: "test reply" });
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("forwardMessage returns false for non-existent message", async () => {
+    const result = await mailModule.forwardMessage({ id: "999999999", to: ["a@b.com"] });
+    expect(result).toBe(false);
+  }, 15000);
+
+  it("createDraft returns boolean", async () => {
+    const result = await mailModule.createDraft({
+      to: ["test@example.com"],
+      subject: `Draft Test ${Date.now()}`,
+      body: "This is a draft",
+    });
+    expect(typeof result).toBe("boolean");
+  }, 15000);
+});
