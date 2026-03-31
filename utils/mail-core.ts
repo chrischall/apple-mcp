@@ -17,7 +17,12 @@ export function escapeAS(text: string): string {
  */
 export const AS_DATE_STR = `((year of d) as string) & "-" & ((month of d as integer) as string) & "-" & ((day of d) as string) & "-" & ((hours of d) as string) & "-" & ((minutes of d) as string) & "-" & ((seconds of d) as string)`;
 
-/** Parses a "YYYY-M-D-H-m-s" string produced by AS_DATE_STR. */
+/**
+ * Parses a "YYYY-M-D-H-m-s" string produced by AS_DATE_STR.
+ * Returns a local-time Date (AppleScript dates are in the machine's timezone).
+ * Do NOT call .toISOString() on the result — it will shift by the UTC offset.
+ * Use .toLocaleString() or pass numeric timestamps for comparisons.
+ */
 export function parseASDate(s: string): Date {
   const parts = s.split("-").map(Number);
   if (parts.length === 6 && parts.every(n => !isNaN(n))) {
@@ -133,6 +138,7 @@ async function getFirstAccount(): Promise<string | null> {
 export async function searchMessages(params: {
   query?: string;
   from?: string;
+  to?: string;
   subject?: string;
   mailbox?: string;
   account?: string;
@@ -145,6 +151,7 @@ export async function searchMessages(params: {
   const {
     query,
     from,
+    to: toFilter,
     subject: subjectFilter,
     mailbox = "INBOX",
     account,
@@ -164,11 +171,23 @@ export async function searchMessages(params: {
     checks.push(`(msgSubject contains "${q}" or msgSender contains "${q}")`);
   }
   if (from) checks.push(`msgSender contains "${escapeAS(from)}"`);
+  if (toFilter) checks.push(`msgRecipients contains "${escapeAS(toFilter)}"`);
   if (subjectFilter) checks.push(`msgSubject contains "${escapeAS(subjectFilter)}"`);
   if (isRead !== undefined) checks.push(`msgRead = "${isRead}"`);
   if (isFlagged !== undefined) checks.push(`msgFlagged = "${isFlagged}"`);
   if (dateFrom) checks.push(`d >= date "${escapeAS(dateFrom)}"`);
   if (dateTo) checks.push(`d <= date "${escapeAS(dateTo)}"`);
+
+  // Build recipient setup block — only fetched when the `to` filter is used
+  const recipientSetup = toFilter
+    ? `
+        set msgRecipients to ""
+        try
+          repeat with r in to recipients of msg
+            set msgRecipients to msgRecipients & (address of r) & " "
+          end repeat
+        end try`
+    : "";
 
   const filterClause = checks.length > 0
     ? `if ${checks.join(" and ")} then\n          set include to true\n        end if`
@@ -191,7 +210,7 @@ export async function searchMessages(params: {
         set d to date received of msg
         set msgDate to ${AS_DATE_STR}
         set msgRead to read status of msg as string
-        set msgFlagged to flagged status of msg as string
+        set msgFlagged to (((flagged status of msg as integer) > 0) as string)${recipientSetup}
         set include to false
         ${filterClause}
         if include then
@@ -209,7 +228,7 @@ export async function searchMessages(params: {
     if (account) {
       output = await runAppleScript(accountScript(account, cmd));
     } else {
-      // Search across all accounts — get account names first
+      // No account specified — search first available account only
       const firstAccount = await getFirstAccount();
       if (!firstAccount) return [];
       output = await runAppleScript(accountScript(firstAccount, cmd));
@@ -249,7 +268,7 @@ export async function listMessages(params: {
         set d to date received of msg
         set msgDate to ${AS_DATE_STR}
         set msgRead to read status of msg as string
-        set msgFlagged to flagged status of msg as string
+        set msgFlagged to (((flagged status of msg as integer) > 0) as string)
         set include to false
         ${unreadCheck}
         if include then
@@ -309,10 +328,11 @@ export async function getMessage(id: string): Promise<MessageContent | null> {
     if (!raw.trim()) return null;
     const htmlSplit = raw.split("|||HTML|||");
     const contentPart = htmlSplit[0];
-    const htmlContent = htmlSplit.length > 1 ? htmlSplit[1] : undefined;
+    // Re-join tail parts in case the message body itself contains the delimiter
+    const htmlContent = htmlSplit.length > 1 ? htmlSplit.slice(1).join("|||HTML|||") : undefined;
     const parts = contentPart.split("|||CONTENT|||");
     if (parts.length < 2) return null;
-    return { id, subject: parts[0], plainText: parts[1], htmlContent };
+    return { id, subject: parts[0], plainText: parts.slice(1).join("|||CONTENT|||"), htmlContent };
   } catch (error) {
     console.error("getMessage error:", error);
     return null;
@@ -361,8 +381,11 @@ export async function sendEmail(params: {
   cc?: string[];
   bcc?: string[];
   account?: string;
+  isHtml?: boolean;
   attachments?: string[];
 }): Promise<boolean> {
+  // isHtml is accepted for API compatibility; Apple Mail's AppleScript interface
+  // only supports plain text content for outgoing messages.
   const { to, subject, body, cc, bcc, account, attachments } = params;
   if (!to || to.length === 0) throw new Error("At least one recipient is required");
 
@@ -399,6 +422,9 @@ export async function sendEmail(params: {
         .join("\n")
     : "";
 
+  // `account` must be a full email address (e.g. "you@example.com") — it sets
+  // the From header string via AppleScript's `sender` property. Mail.app routes
+  // the message using its own account-matching rules on that address.
   const senderLine = account ? `set sender to "${escapeAS(account)}"` : "";
 
   const script = appScript(`
