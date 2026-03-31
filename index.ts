@@ -816,7 +816,7 @@ function initServer() {
 					const ok = await mailModule.deleteTemplate(id);
 					return {
 						content: [{ type: "text", text: ok ? `Template ${id} deleted.` : `Template ${id} not found.` }],
-						isError: false,
+						isError: !ok,
 					};
 				}
 
