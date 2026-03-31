@@ -2,6 +2,7 @@
 import { describe, it, expect } from "bun:test";
 import { sleep } from "../helpers/test-utils.js";
 import mailModule from "../../utils/mail.js";
+import { homedir } from "os";
 
 describe("mail_search / searchMessages", () => {
   it("returns an array", async () => {
@@ -185,5 +186,129 @@ describe("mail-batch operations", () => {
   it("batchMoveMessages returns per-item results", async () => {
     const results = await mailModule.batchMoveMessages({ ids: ["999999999"], mailbox: "Trash" });
     expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+});
+
+describe("mail-manage: accounts and mailboxes", () => {
+  it("listAccounts returns array of Account objects", async () => {
+    const accounts = await mailModule.listAccounts();
+    expect(Array.isArray(accounts)).toBe(true);
+    for (const a of accounts) {
+      expect(typeof a.name).toBe("string");
+      expect(typeof a.email).toBe("string");
+      expect(typeof a.enabled).toBe("boolean");
+    }
+    console.log(`Found ${accounts.length} accounts`);
+  }, 15000);
+
+  it("listMailboxes returns array with name and unreadCount", async () => {
+    const accounts = await mailModule.listAccounts();
+    if (accounts.length === 0) { console.log("⚠️ No accounts"); return; }
+    const mailboxes = await mailModule.listMailboxes({ account: accounts[0].name });
+    expect(Array.isArray(mailboxes)).toBe(true);
+    for (const mb of mailboxes) {
+      expect(typeof mb.name).toBe("string");
+      expect(typeof mb.unreadCount).toBe("number");
+      expect(typeof mb.messageCount).toBe("number");
+    }
+  }, 15000);
+
+  it("createMailbox returns boolean", async () => {
+    const accounts = await mailModule.listAccounts();
+    if (accounts.length === 0) { console.log("⚠️ No accounts"); return; }
+    const result = await mailModule.createMailbox({ name: `MCPTest${Date.now()}`, account: accounts[0].name });
+    expect(typeof result).toBe("boolean");
+  }, 15000);
+});
+
+describe("mail-manage: attachments", () => {
+  it("listAttachments returns empty array for non-existent message", async () => {
+    const result = await mailModule.listAttachments("999999999");
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(0);
+  }, 15000);
+
+  it("saveAttachment rejects path outside home directory", async () => {
+    await expect(
+      mailModule.saveAttachment({ id: "123456789", attachmentName: "test.pdf", savePath: "/etc" })
+    ).rejects.toThrow();
+  }, 5000);
+
+  it("saveAttachment rejects path traversal in attachmentName", async () => {
+    await expect(
+      mailModule.saveAttachment({ id: "123456789", attachmentName: "../evil.sh", savePath: `${homedir()}/Downloads` })
+    ).rejects.toThrow();
+  }, 5000);
+});
+
+describe("mail-manage: templates", () => {
+  const testTemplateName = `TestTemplate_${Date.now()}`;
+  let savedId: string;
+
+  it("saveTemplate returns a template with an id", async () => {
+    const t = await mailModule.saveTemplate({
+      name: testTemplateName,
+      subject: "Hello {{Name}}",
+      body: "Dear {{Name}}, this is a test.",
+    });
+    expect(typeof t.id).toBe("string");
+    expect(t.name).toBe(testTemplateName);
+    savedId = t.id;
+  }, 5000);
+
+  it("listTemplates includes the saved template", async () => {
+    const templates = await mailModule.listTemplates();
+    expect(Array.isArray(templates)).toBe(true);
+    const found = templates.find(t => t.name === testTemplateName);
+    expect(found).toBeDefined();
+  }, 5000);
+
+  it("getTemplate returns the template by id", async () => {
+    if (!savedId) { console.log("⚠️ skipped: no savedId"); return; }
+    const t = await mailModule.getTemplate(savedId);
+    expect(t).not.toBeNull();
+    expect(t!.name).toBe(testTemplateName);
+  }, 5000);
+
+  it("deleteTemplate removes the template", async () => {
+    if (!savedId) { console.log("⚠️ skipped: no savedId"); return; }
+    const result = await mailModule.deleteTemplate(savedId);
+    expect(result).toBe(true);
+    const t = await mailModule.getTemplate(savedId);
+    expect(t).toBeNull();
+  }, 5000);
+});
+
+describe("mail-manage: rules", () => {
+  it("listRules returns an array", async () => {
+    const rules = await mailModule.listRules();
+    expect(Array.isArray(rules)).toBe(true);
+    for (const r of rules) {
+      expect(typeof r.name).toBe("string");
+      expect(typeof r.enabled).toBe("boolean");
+    }
+    console.log(`Found ${rules.length} rules`);
+  }, 15000);
+
+  it("enableRule returns false for non-existent rule", async () => {
+    const result = await mailModule.enableRule("NonExistentRuleZzZz");
+    expect(result).toBe(false);
+  }, 10000);
+
+  it("disableRule returns false for non-existent rule", async () => {
+    const result = await mailModule.disableRule("NonExistentRuleZzZz");
+    expect(result).toBe(false);
+  }, 10000);
+});
+
+describe("mail-manage: contacts", () => {
+  it("searchContacts returns an array", async () => {
+    const contacts = await mailModule.searchContacts("test");
+    expect(Array.isArray(contacts)).toBe(true);
+    for (const c of contacts) {
+      expect(typeof c.name).toBe("string");
+      expect(Array.isArray(c.emails)).toBe(true);
+      expect(Array.isArray(c.phones)).toBe(true);
+    }
   }, 15000);
 });
