@@ -193,8 +193,15 @@ export async function saveAttachment(params: {
 
   const resolvedPath = resolvePath(savePath);
   const allowed = [homedir(), "/tmp", "/private/tmp", "/Volumes"];
-  if (!allowed.some(p => resolvedPath.startsWith(p))) {
+  if (!allowed.some(p => resolvedPath.startsWith(p + "/") || resolvedPath === p)) {
     throw new Error(`Save path "${savePath}" is outside allowed directories`);
+  }
+
+  // Validate the full final path (dir + filename) stays inside an allowed directory
+  const { join: pathJoin } = await import("path");
+  const finalPath = resolvePath(pathJoin(resolvedPath, attachmentName));
+  if (!allowed.some(p => finalPath.startsWith(p + "/") || finalPath === p)) {
+    throw new Error(`Resolved attachment path "${finalPath}" is outside allowed directories`);
   }
 
   const script = appScript(`
@@ -207,7 +214,7 @@ export async function saveAttachment(params: {
             set msg to item 1 of matchingMsgs
             repeat with att in mail attachments of msg
               if name of att is "${escapeAS(attachmentName)}" then
-                set saveTo to POSIX file "${escapeAS(resolvedPath)}/${escapeAS(attachmentName)}"
+                set saveTo to POSIX file "${escapeAS(finalPath)}"
                 save att in saveTo
                 return "ok"
               end if
