@@ -145,3 +145,45 @@ describe("mail-actions: reply/forward/draft", () => {
     expect(typeof result).toBe("boolean");
   }, 15000);
 });
+
+describe("mail-batch operations", () => {
+  it("batchMarkAsRead returns per-item results", async () => {
+    const results = await mailModule.batchMarkAsRead(["999999998", "999999999"]);
+    expect(Array.isArray(results)).toBe(true);
+    expect(results.length).toBe(2);
+    for (const r of results) {
+      expect(typeof r.id).toBe("string");
+      expect(typeof r.success).toBe("boolean");
+    }
+  }, 20000);
+
+  it("batchMarkAsRead rejects more than 100 ids", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => String(i + 1));
+    await expect(mailModule.batchMarkAsRead(ids)).rejects.toThrow("100");
+  }, 5000);
+
+  it("batchMarkAsUnread returns per-item results", async () => {
+    const results = await mailModule.batchMarkAsUnread(["999999999"]);
+    expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+
+  it("batchFlagMessages returns per-item results", async () => {
+    const results = await mailModule.batchFlagMessages(["999999999"]);
+    expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+
+  it("batchUnflagMessages returns per-item results", async () => {
+    const results = await mailModule.batchUnflagMessages(["999999999"]);
+    expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+
+  it("batchDeleteMessages returns per-item results", async () => {
+    const results = await mailModule.batchDeleteMessages(["999999999"]);
+    expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+
+  it("batchMoveMessages returns per-item results", async () => {
+    const results = await mailModule.batchMoveMessages({ ids: ["999999999"], mailbox: "Trash" });
+    expect(Array.isArray(results)).toBe(true);
+  }, 15000);
+});
