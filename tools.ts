@@ -78,58 +78,6 @@ const CONTACTS_TOOL: Tool = {
     }
   };
   
-  const MAIL_TOOL: Tool = {
-    name: "mail",
-    description: "Interact with Apple Mail app - read unread emails, search emails, and send emails",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "Operation to perform: 'unread', 'search', 'send', 'mailboxes', 'accounts', or 'latest'",
-          enum: ["unread", "search", "send", "mailboxes", "accounts", "latest"]
-        },
-        account: {
-          type: "string",
-          description: "Email account to use (optional - if not provided, searches across all accounts)"
-        },
-        mailbox: {
-          type: "string",
-          description: "Mailbox to use (optional - if not provided, uses inbox or searches across all mailboxes)"
-        },
-        limit: {
-          type: "number",
-          description: "Number of emails to retrieve (optional, for unread, search, and latest operations)"
-        },
-        searchTerm: {
-          type: "string",
-          description: "Text to search for in emails (required for search operation)"
-        },
-        to: {
-          type: "string",
-          description: "Recipient email address (required for send operation)"
-        },
-        subject: {
-          type: "string",
-          description: "Email subject (required for send operation)"
-        },
-        body: {
-          type: "string",
-          description: "Email body content (required for send operation)"
-        },
-        cc: {
-          type: "string",
-          description: "CC email address (optional for send operation)"
-        },
-        bcc: {
-          type: "string",
-          description: "BCC email address (optional for send operation)"
-        }
-      },
-      required: ["operation"]
-    }
-  };
-  
   const REMINDERS_TOOL: Tool = {
     name: "reminders",
     description: "Search, create, and open reminders in Apple Reminders app",
@@ -291,6 +239,340 @@ const MAPS_TOOL: Tool = {
   }
 };
 
-const tools = [CONTACTS_TOOL, NOTES_TOOL, MESSAGES_TOOL, MAIL_TOOL, REMINDERS_TOOL, CALENDAR_TOOL, MAPS_TOOL];
+const MAIL_SEARCH_TOOL: Tool = {
+  name: "mail_search",
+  description: "Search emails in Apple Mail by query, sender, subject, date range, read/flagged status",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query:    { type: "string", description: "Full-text search term (subject + sender)" },
+      from:     { type: "string", description: "Filter by sender address" },
+      subject:  { type: "string", description: "Filter by subject text" },
+      mailbox:  { type: "string", description: "Mailbox to search (default: INBOX)" },
+      account:  { type: "string", description: "Account name (searches first account if omitted)" },
+      isRead:   { type: "boolean", description: "Filter by read status" },
+      isFlagged:{ type: "boolean", description: "Filter by flagged status" },
+      dateFrom: { type: "string", description: "Start date (e.g. 'March 1, 2026')" },
+      dateTo:   { type: "string", description: "End date (e.g. 'March 31, 2026')" },
+      limit:    { type: "number", description: "Max results (default 50)" },
+    },
+  },
+};
+
+const MAIL_LIST_TOOL: Tool = {
+  name: "mail_list",
+  description: "List emails in a mailbox (newest first)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      mailbox:    { type: "string", description: "Mailbox name (default: INBOX)" },
+      account:    { type: "string", description: "Account name" },
+      limit:      { type: "number", description: "Max results (default 50)" },
+      unreadOnly: { type: "boolean", description: "Return only unread messages" },
+    },
+  },
+};
+
+const MAIL_GET_TOOL: Tool = {
+  name: "mail_get",
+  description: "Get the full content (plain text and HTML) of a specific email by its numeric ID",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Numeric message ID (from mail_search or mail_list)" },
+    },
+    required: ["id"],
+  },
+};
+
+const MAIL_SEND_TOOL: Tool = {
+  name: "mail_send",
+  description: "Send an email via Apple Mail",
+  inputSchema: {
+    type: "object",
+    properties: {
+      to:          { type: "array", items: { type: "string" }, description: "Recipient addresses" },
+      subject:     { type: "string", description: "Email subject" },
+      body:        { type: "string", description: "Email body (plain text)" },
+      cc:          { type: "array", items: { type: "string" }, description: "CC addresses" },
+      bcc:         { type: "array", items: { type: "string" }, description: "BCC addresses" },
+      account:     { type: "string", description: "Sender account email address" },
+      attachments: { type: "array", items: { type: "string" }, description: "Absolute paths to files to attach" },
+    },
+    required: ["to", "subject", "body"],
+  },
+};
+
+const MAIL_UNREAD_COUNT_TOOL: Tool = {
+  name: "mail_unread_count",
+  description: "Get the total unread email count for an account or mailbox",
+  inputSchema: {
+    type: "object",
+    properties: {
+      mailbox: { type: "string", description: "Mailbox name (omit for all mailboxes in account)" },
+      account: { type: "string", description: "Account name" },
+    },
+  },
+};
+
+const MAIL_REPLY_TOOL: Tool = {
+  name: "mail_reply",
+  description: "Reply to an email message",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id:       { type: "string", description: "Numeric message ID" },
+      body:     { type: "string", description: "Reply body text" },
+      replyAll: { type: "boolean", description: "Reply to all recipients (default false)" },
+    },
+    required: ["id", "body"],
+  },
+};
+
+const MAIL_FORWARD_TOOL: Tool = {
+  name: "mail_forward",
+  description: "Forward an email to one or more recipients",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id:   { type: "string", description: "Numeric message ID" },
+      to:   { type: "array", items: { type: "string" }, description: "Recipient addresses" },
+      body: { type: "string", description: "Optional text to prepend before the forwarded content" },
+    },
+    required: ["id", "to"],
+  },
+};
+
+const MAIL_CREATE_DRAFT_TOOL: Tool = {
+  name: "mail_create_draft",
+  description: "Create a draft email (saved but not sent)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      to:      { type: "array", items: { type: "string" }, description: "Recipient addresses" },
+      subject: { type: "string", description: "Email subject" },
+      body:    { type: "string", description: "Email body" },
+      cc:      { type: "array", items: { type: "string" }, description: "CC addresses" },
+      bcc:     { type: "array", items: { type: "string" }, description: "BCC addresses" },
+      account: { type: "string", description: "Account to create the draft in" },
+    },
+    required: ["to", "subject", "body"],
+  },
+};
+
+const MAIL_MARK_READ_TOOL: Tool = {
+  name: "mail_mark_read",
+  description: "Mark an email as read",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_MARK_UNREAD_TOOL: Tool = {
+  name: "mail_mark_unread",
+  description: "Mark an email as unread",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_FLAG_TOOL: Tool = {
+  name: "mail_flag",
+  description: "Flag an email message",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_UNFLAG_TOOL: Tool = {
+  name: "mail_unflag",
+  description: "Remove the flag from an email message",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_DELETE_TOOL: Tool = {
+  name: "mail_delete",
+  description: "Delete (move to Trash) an email message",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_MOVE_TOOL: Tool = {
+  name: "mail_move",
+  description: "Move an email to a different mailbox",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id:      { type: "string", description: "Numeric message ID" },
+      mailbox: { type: "string", description: "Destination mailbox name" },
+      account: { type: "string", description: "Account containing the destination mailbox" },
+    },
+    required: ["id", "mailbox"],
+  },
+};
+
+const BATCH_IDS_SCHEMA = {
+  type: "array",
+  items: { type: "string" },
+  description: "Array of numeric message IDs (max 100)",
+};
+
+const MAIL_BATCH_DELETE_TOOL: Tool = {
+  name: "mail_batch_delete",
+  description: "Delete multiple emails at once (max 100)",
+  inputSchema: { type: "object", properties: { ids: BATCH_IDS_SCHEMA }, required: ["ids"] },
+};
+
+const MAIL_BATCH_MOVE_TOOL: Tool = {
+  name: "mail_batch_move",
+  description: "Move multiple emails to a mailbox (max 100)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      ids:     BATCH_IDS_SCHEMA,
+      mailbox: { type: "string", description: "Destination mailbox name" },
+      account: { type: "string", description: "Account containing the destination mailbox" },
+    },
+    required: ["ids", "mailbox"],
+  },
+};
+
+const MAIL_BATCH_MARK_READ_TOOL: Tool = {
+  name: "mail_batch_mark_read",
+  description: "Mark multiple emails as read (max 100)",
+  inputSchema: { type: "object", properties: { ids: BATCH_IDS_SCHEMA }, required: ["ids"] },
+};
+
+const MAIL_BATCH_MARK_UNREAD_TOOL: Tool = {
+  name: "mail_batch_mark_unread",
+  description: "Mark multiple emails as unread (max 100)",
+  inputSchema: { type: "object", properties: { ids: BATCH_IDS_SCHEMA }, required: ["ids"] },
+};
+
+const MAIL_BATCH_FLAG_TOOL: Tool = {
+  name: "mail_batch_flag",
+  description: "Flag multiple emails (max 100)",
+  inputSchema: { type: "object", properties: { ids: BATCH_IDS_SCHEMA }, required: ["ids"] },
+};
+
+const MAIL_BATCH_UNFLAG_TOOL: Tool = {
+  name: "mail_batch_unflag",
+  description: "Remove flags from multiple emails (max 100)",
+  inputSchema: { type: "object", properties: { ids: BATCH_IDS_SCHEMA }, required: ["ids"] },
+};
+
+const MAIL_LIST_MAILBOXES_TOOL: Tool = {
+  name: "mail_list_mailboxes",
+  description: "List all mailboxes for an account with unread and total message counts",
+  inputSchema: { type: "object", properties: { account: { type: "string", description: "Account name (uses first account if omitted)" } } },
+};
+
+const MAIL_LIST_ACCOUNTS_TOOL: Tool = {
+  name: "mail_list_accounts",
+  description: "List all configured email accounts in Apple Mail",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const MAIL_CREATE_MAILBOX_TOOL: Tool = {
+  name: "mail_create_mailbox",
+  description: "Create a new mailbox (folder) in an account",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name:    { type: "string", description: "Mailbox name to create" },
+      account: { type: "string", description: "Account to create the mailbox in" },
+    },
+    required: ["name"],
+  },
+};
+
+const MAIL_LIST_ATTACHMENTS_TOOL: Tool = {
+  name: "mail_list_attachments",
+  description: "List attachments for a specific email message",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Numeric message ID" } }, required: ["id"] },
+};
+
+const MAIL_SAVE_ATTACHMENT_TOOL: Tool = {
+  name: "mail_save_attachment",
+  description: "Save an email attachment to disk",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id:             { type: "string", description: "Numeric message ID" },
+      attachmentName: { type: "string", description: "Filename of the attachment (no path separators)" },
+      savePath:       { type: "string", description: "Absolute directory path to save the file (must be under home directory, /tmp, or /Volumes)" },
+    },
+    required: ["id", "attachmentName", "savePath"],
+  },
+};
+
+const MAIL_LIST_TEMPLATES_TOOL: Tool = {
+  name: "mail_list_templates",
+  description: "List all saved email templates",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const MAIL_SAVE_TEMPLATE_TOOL: Tool = {
+  name: "mail_save_template",
+  description: "Create or update an email template",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name:    { type: "string", description: "Template name" },
+      subject: { type: "string", description: "Subject line (may include {{placeholder}} tokens)" },
+      body:    { type: "string", description: "Email body (may include {{placeholder}} tokens)" },
+      to:      { type: "array", items: { type: "string" }, description: "Default recipients" },
+      cc:      { type: "array", items: { type: "string" }, description: "Default CC recipients" },
+      id:      { type: "string", description: "Template ID to update (omit to create new)" },
+    },
+    required: ["name", "subject", "body"],
+  },
+};
+
+const MAIL_GET_TEMPLATE_TOOL: Tool = {
+  name: "mail_get_template",
+  description: "Get a saved email template by ID",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Template ID" } }, required: ["id"] },
+};
+
+const MAIL_DELETE_TEMPLATE_TOOL: Tool = {
+  name: "mail_delete_template",
+  description: "Delete a saved email template",
+  inputSchema: { type: "object", properties: { id: { type: "string", description: "Template ID" } }, required: ["id"] },
+};
+
+const MAIL_LIST_RULES_TOOL: Tool = {
+  name: "mail_list_rules",
+  description: "List all mail rules (filters) configured in Apple Mail",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const MAIL_ENABLE_RULE_TOOL: Tool = {
+  name: "mail_enable_rule",
+  description: "Enable a mail rule by name",
+  inputSchema: { type: "object", properties: { name: { type: "string", description: "Rule name" } }, required: ["name"] },
+};
+
+const MAIL_DISABLE_RULE_TOOL: Tool = {
+  name: "mail_disable_rule",
+  description: "Disable a mail rule by name",
+  inputSchema: { type: "object", properties: { name: { type: "string", description: "Rule name" } }, required: ["name"] },
+};
+
+const MAIL_SEARCH_CONTACTS_TOOL: Tool = {
+  name: "mail_search_contacts",
+  description: "Search Apple Contacts by name or email address (useful for finding recipients)",
+  inputSchema: { type: "object", properties: { query: { type: "string", description: "Name or email to search for" } }, required: ["query"] },
+};
+
+const tools = [
+  CONTACTS_TOOL, NOTES_TOOL, MESSAGES_TOOL, REMINDERS_TOOL, CALENDAR_TOOL, MAPS_TOOL,
+  // Mail tools (33)
+  MAIL_SEARCH_TOOL, MAIL_LIST_TOOL, MAIL_GET_TOOL, MAIL_SEND_TOOL, MAIL_UNREAD_COUNT_TOOL,
+  MAIL_REPLY_TOOL, MAIL_FORWARD_TOOL, MAIL_CREATE_DRAFT_TOOL,
+  MAIL_MARK_READ_TOOL, MAIL_MARK_UNREAD_TOOL, MAIL_FLAG_TOOL, MAIL_UNFLAG_TOOL,
+  MAIL_DELETE_TOOL, MAIL_MOVE_TOOL,
+  MAIL_BATCH_DELETE_TOOL, MAIL_BATCH_MOVE_TOOL,
+  MAIL_BATCH_MARK_READ_TOOL, MAIL_BATCH_MARK_UNREAD_TOOL,
+  MAIL_BATCH_FLAG_TOOL, MAIL_BATCH_UNFLAG_TOOL,
+  MAIL_LIST_MAILBOXES_TOOL, MAIL_LIST_ACCOUNTS_TOOL, MAIL_CREATE_MAILBOX_TOOL,
+  MAIL_LIST_ATTACHMENTS_TOOL, MAIL_SAVE_ATTACHMENT_TOOL,
+  MAIL_LIST_TEMPLATES_TOOL, MAIL_SAVE_TEMPLATE_TOOL, MAIL_GET_TEMPLATE_TOOL, MAIL_DELETE_TEMPLATE_TOOL,
+  MAIL_LIST_RULES_TOOL, MAIL_ENABLE_RULE_TOOL, MAIL_DISABLE_RULE_TOOL,
+  MAIL_SEARCH_CONTACTS_TOOL,
+];
 
 export default tools;
