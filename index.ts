@@ -5,7 +5,6 @@ import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { runAppleScript } from "run-applescript";
 import tools from "./tools";
 
 
@@ -506,323 +505,361 @@ function initServer() {
 					}
 				}
 
-				case "mail": {
-					if (!isMailArgs(args)) {
-						throw new Error("Invalid arguments for mail tool");
-					}
-
-					try {
-						const mailModule = await loadModule("mail");
-
-						switch (args.operation) {
-							case "unread": {
-								// If an account is specified, we'll try to search specifically in that account
-								let emails;
-								if (args.account) {
-									console.error(
-										`Getting unread emails for account: ${args.account}`,
-									);
-									// Use AppleScript to get unread emails from specific account
-									const script = `
-tell application "Mail"
-    set resultList to {}
-    try
-        set targetAccount to first account whose name is "${args.account.replace(/"/g, '\\"')}"
-
-        -- Get mailboxes for this account
-        set acctMailboxes to every mailbox of targetAccount
-
-        -- If mailbox is specified, only search in that mailbox
-        set mailboxesToSearch to acctMailboxes
-        ${
-					args.mailbox
-						? `
-        set mailboxesToSearch to {}
-        repeat with mb in acctMailboxes
-            if name of mb is "${args.mailbox.replace(/"/g, '\\"')}" then
-                set mailboxesToSearch to {mb}
-                exit repeat
-            end if
-        end repeat
-        `
-						: ""
+				case "mail_search": {
+					const mailModule = await loadModule("mail");
+					const { query, from, subject, mailbox, account, isRead, isFlagged, dateFrom, dateTo, limit } = args as {
+						query?: string; from?: string; subject?: string; mailbox?: string; account?: string;
+						isRead?: boolean; isFlagged?: boolean; dateFrom?: string; dateTo?: string; limit?: number;
+					};
+					const results = await mailModule.searchMessages({ query, from, subject, mailbox, account, isRead, isFlagged, dateFrom, dateTo, limit });
+					return {
+						content: [{ type: "text", text: results.length ? JSON.stringify(results, null, 2) : "No messages found." }],
+						isError: false,
+					};
 				}
 
-        -- Search specified mailboxes
-        repeat with mb in mailboxesToSearch
-            try
-                set unreadMessages to (messages of mb whose read status is false)
-                if (count of unreadMessages) > 0 then
-                    set msgLimit to ${args.limit || 10}
-                    if (count of unreadMessages) < msgLimit then
-                        set msgLimit to (count of unreadMessages)
-                    end if
+				case "mail_list": {
+					const mailModule = await loadModule("mail");
+					const { mailbox, account, limit, unreadOnly } = args as {
+						mailbox?: string; account?: string; limit?: number; unreadOnly?: boolean;
+					};
+					const results = await mailModule.listMessages({ mailbox, account, limit, unreadOnly });
+					return {
+						content: [{ type: "text", text: results.length ? JSON.stringify(results, null, 2) : "No messages found." }],
+						isError: false,
+					};
+				}
 
-                    repeat with i from 1 to msgLimit
-                        try
-                            set currentMsg to item i of unreadMessages
-                            set msgData to {subject:(subject of currentMsg), sender:(sender of currentMsg), ¬
-                                        date:(date sent of currentMsg) as string, mailbox:(name of mb)}
+				case "mail_get": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const content = await mailModule.getMessage(id);
+					return {
+						content: [{ type: "text", text: content ? JSON.stringify(content, null, 2) : `Message ${id} not found.` }],
+						isError: false,
+					};
+				}
 
-                            -- Try to get content if possible
-                            try
-                                set msgContent to content of currentMsg
-                                if length of msgContent > 500 then
-                                    set msgContent to (text 1 thru 500 of msgContent) & "..."
-                                end if
-                                set msgData to msgData & {content:msgContent}
-                            on error
-                                set msgData to msgData & {content:"[Content not available]"}
-                            end try
+				case "mail_send": {
+					const mailModule = await loadModule("mail");
+					const { to, subject, body, cc, bcc, account, attachments } = args as {
+						to: string[]; subject: string; body: string;
+						cc?: string[]; bcc?: string[]; account?: string; attachments?: string[];
+					};
+					if (!to?.length) throw new Error("to is required");
+					if (!subject) throw new Error("subject is required");
+					if (!body) throw new Error("body is required");
+					const ok = await mailModule.sendEmail({ to, subject, body, cc, bcc, account, attachments });
+					return {
+						content: [{ type: "text", text: ok ? `Email sent to ${to.join(", ")}.` : "Failed to send email." }],
+						isError: !ok,
+					};
+				}
 
-                            set end of resultList to msgData
-                        on error
-                            -- Skip problematic messages
-                        end try
-                    end repeat
+				case "mail_unread_count": {
+					const mailModule = await loadModule("mail");
+					const { mailbox, account } = args as { mailbox?: string; account?: string };
+					const count = await mailModule.getUnreadCount({ mailbox, account });
+					return {
+						content: [{ type: "text", text: `Unread count: ${count}` }],
+						isError: false,
+					};
+				}
 
-                    if (count of resultList) ≥ ${args.limit || 10} then exit repeat
-                end if
-            on error
-                -- Skip problematic mailboxes
-            end try
-        end repeat
-    on error errMsg
-        return "Error: " & errMsg
-    end try
+				case "mail_reply": {
+					const mailModule = await loadModule("mail");
+					const { id, body, replyAll } = args as { id: string; body: string; replyAll?: boolean };
+					if (!id) throw new Error("id is required");
+					if (!body) throw new Error("body is required");
+					const ok = await mailModule.replyToMessage({ id, body, replyAll });
+					return {
+						content: [{ type: "text", text: ok ? "Reply sent." : "Failed to send reply." }],
+						isError: !ok,
+					};
+				}
 
-    return resultList
-end tell`;
+				case "mail_forward": {
+					const mailModule = await loadModule("mail");
+					const { id, to, body } = args as { id: string; to: string[]; body?: string };
+					if (!id) throw new Error("id is required");
+					if (!to?.length) throw new Error("to is required");
+					const ok = await mailModule.forwardMessage({ id, to, body });
+					return {
+						content: [{ type: "text", text: ok ? `Forwarded to ${to.join(", ")}.` : "Failed to forward message." }],
+						isError: !ok,
+					};
+				}
 
-									try {
-										const asResult = await runAppleScript(script);
-										if (asResult && asResult.startsWith("Error:")) {
-											throw new Error(asResult);
-										}
+				case "mail_create_draft": {
+					const mailModule = await loadModule("mail");
+					const { to, subject, body, cc, bcc, account } = args as {
+						to: string[]; subject: string; body: string;
+						cc?: string[]; bcc?: string[]; account?: string;
+					};
+					if (!to?.length) throw new Error("to is required");
+					if (!subject) throw new Error("subject is required");
+					if (!body) throw new Error("body is required");
+					const ok = await mailModule.createDraft({ to, subject, body, cc, bcc, account });
+					return {
+						content: [{ type: "text", text: ok ? "Draft created." : "Failed to create draft." }],
+						isError: !ok,
+					};
+				}
 
-										// Parse the results - similar to general getUnreadMails
-										const emailData = [];
-										const matches = asResult.match(/\{([^}]+)\}/g);
-										if (matches && matches.length > 0) {
-											for (const match of matches) {
-												try {
-													const props = match
-														.substring(1, match.length - 1)
-														.split(",");
-													const email: any = {};
+				case "mail_mark_read": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.markAsRead(id);
+					return { content: [{ type: "text", text: ok ? "Marked as read." : "Failed (message not found?)." }], isError: !ok };
+				}
 
-													props.forEach((prop) => {
-														const parts = prop.split(":");
-														if (parts.length >= 2) {
-															const key = parts[0].trim();
-															const value = parts.slice(1).join(":").trim();
-															email[key] = value;
-														}
-													});
+				case "mail_mark_unread": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.markAsUnread(id);
+					return { content: [{ type: "text", text: ok ? "Marked as unread." : "Failed (message not found?)." }], isError: !ok };
+				}
 
-													if (email.subject || email.sender) {
-														emailData.push({
-															subject: email.subject || "No subject",
-															sender: email.sender || "Unknown sender",
-															dateSent: email.date || new Date().toString(),
-															content:
-																email.content || "[Content not available]",
-															isRead: false,
-															mailbox: `${args.account} - ${email.mailbox || "Unknown"}`,
-														});
-													}
-												} catch (parseError) {
-													console.error(
-														"Error parsing email match:",
-														parseError,
-													);
-												}
-											}
-										}
+				case "mail_flag": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.flagMessage(id);
+					return { content: [{ type: "text", text: ok ? "Message flagged." : "Failed (message not found?)." }], isError: !ok };
+				}
 
-										emails = emailData;
-									} catch (error) {
-										console.error(
-											"Error getting account-specific emails:",
-											error,
-										);
-										// Fallback to general method if specific account fails
-										emails = await mailModule.getUnreadMails(args.limit);
-									}
-								} else {
-									// No account specified, use the general method
-									emails = await mailModule.getUnreadMails(args.limit);
-								}
+				case "mail_unflag": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.unflagMessage(id);
+					return { content: [{ type: "text", text: ok ? "Flag removed." : "Failed (message not found?)." }], isError: !ok };
+				}
 
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												emails.length > 0
-													? `Found ${emails.length} unread email(s)${args.account ? ` in account "${args.account}"` : ""}${args.mailbox ? ` and mailbox "${args.mailbox}"` : ""}:\n\n` +
-														emails
-															.map(
-																(email: any) =>
-																	`[${email.dateSent}] From: ${email.sender}\nMailbox: ${email.mailbox}\nSubject: ${email.subject}\n${email.content.substring(0, 500)}${email.content.length > 500 ? "..." : ""}`,
-															)
-															.join("\n\n")
-													: `No unread emails found${args.account ? ` in account "${args.account}"` : ""}${args.mailbox ? ` and mailbox "${args.mailbox}"` : ""}`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "mail_delete": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.deleteMessage(id);
+					return { content: [{ type: "text", text: ok ? "Message deleted." : "Failed (message not found?)." }], isError: !ok };
+				}
 
-							case "search": {
-								if (!args.searchTerm) {
-									throw new Error(
-										"Search term is required for search operation",
-									);
-								}
-								const emails = await mailModule.searchMails(
-									args.searchTerm,
-									args.limit,
-								);
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												emails.length > 0
-													? `Found ${emails.length} email(s) for "${args.searchTerm}"${args.account ? ` in account "${args.account}"` : ""}${args.mailbox ? ` and mailbox "${args.mailbox}"` : ""}:\n\n` +
-														emails
-															.map(
-																(email: any) =>
-																	`[${email.dateSent}] From: ${email.sender}\nMailbox: ${email.mailbox}\nSubject: ${email.subject}\n${email.content.substring(0, 200)}${email.content.length > 200 ? "..." : ""}`,
-															)
-															.join("\n\n")
-													: `No emails found for "${args.searchTerm}"${args.account ? ` in account "${args.account}"` : ""}${args.mailbox ? ` and mailbox "${args.mailbox}"` : ""}`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "mail_move": {
+					const mailModule = await loadModule("mail");
+					const { id, mailbox, account } = args as { id: string; mailbox: string; account?: string };
+					if (!id) throw new Error("id is required");
+					if (!mailbox) throw new Error("mailbox is required");
+					const ok = await mailModule.moveMessage({ id, mailbox, account });
+					return {
+						content: [{ type: "text", text: ok ? `Moved to ${mailbox}.` : "Failed (message or mailbox not found?)." }],
+						isError: !ok,
+					};
+				}
 
-							case "send": {
-								if (!args.to || !args.subject || !args.body) {
-									throw new Error(
-										"Recipient (to), subject, and body are required for send operation",
-									);
-								}
-								const result = await mailModule.sendMail(
-									args.to,
-									args.subject,
-									args.body,
-									args.cc,
-									args.bcc,
-								);
-								return {
-									content: [{ type: "text", text: result }],
-									isError: false,
-								};
-							}
+				case "mail_batch_delete": {
+					const mailModule = await loadModule("mail");
+					const { ids } = args as { ids: string[] };
+					if (!ids?.length) throw new Error("ids is required");
+					const results = await mailModule.batchDeleteMessages(ids);
+					const failed = results.filter((r: any) => !r.success);
+					return {
+						content: [{ type: "text", text: `Deleted ${results.length - failed.length}/${results.length} messages.${failed.length ? "\nFailed: " + JSON.stringify(failed) : ""}` }],
+						isError: false,
+					};
+				}
 
-							case "mailboxes": {
-								if (args.account) {
-									const mailboxes = await mailModule.getMailboxesForAccount(
-										args.account,
-									);
-									return {
-										content: [
-											{
-												type: "text",
-												text:
-													mailboxes.length > 0
-														? `Found ${mailboxes.length} mailboxes for account "${args.account}":\n\n${mailboxes.join("\n")}`
-														: `No mailboxes found for account "${args.account}". Make sure the account name is correct.`,
-											},
-										],
-										isError: false,
-									};
-								} else {
-									const mailboxes = await mailModule.getMailboxes();
-									return {
-										content: [
-											{
-												type: "text",
-												text:
-													mailboxes.length > 0
-														? `Found ${mailboxes.length} mailboxes:\n\n${mailboxes.join("\n")}`
-														: "No mailboxes found. Make sure Mail app is running and properly configured.",
-											},
-										],
-										isError: false,
-									};
-								}
-							}
+				case "mail_batch_move": {
+					const mailModule = await loadModule("mail");
+					const { ids, mailbox, account } = args as { ids: string[]; mailbox: string; account?: string };
+					if (!ids?.length) throw new Error("ids is required");
+					if (!mailbox) throw new Error("mailbox is required");
+					const results = await mailModule.batchMoveMessages({ ids, mailbox, account });
+					const failed = results.filter((r: any) => !r.success);
+					return {
+						content: [{ type: "text", text: `Moved ${results.length - failed.length}/${results.length} to ${mailbox}.${failed.length ? "\nFailed: " + JSON.stringify(failed) : ""}` }],
+						isError: false,
+					};
+				}
 
-							case "accounts": {
-								const accounts = await mailModule.getAccounts();
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												accounts.length > 0
-													? `Found ${accounts.length} email accounts:\n\n${accounts.join("\n")}`
-													: "No email accounts found. Make sure Mail app is configured with at least one account.",
-										},
-									],
-									isError: false,
-								};
-							}
+				case "mail_batch_mark_read": {
+					const mailModule = await loadModule("mail");
+					const { ids } = args as { ids: string[] };
+					if (!ids?.length) throw new Error("ids is required");
+					const results = await mailModule.batchMarkAsRead(ids);
+					const ok = results.filter((r: any) => r.success).length;
+					return { content: [{ type: "text", text: `Marked ${ok}/${results.length} as read.` }], isError: false };
+				}
 
-							case "latest": {
-								let account = args.account;
-								if (!account) {
-									const accounts = await mailModule.getAccounts();
-									if (accounts.length === 0) {
-										throw new Error(
-											"No email accounts found. Make sure Mail app is configured with at least one account.",
-										);
-									}
-									account = accounts[0]; // Use the first account if not provided
-								}
-								const emails = await mailModule.getLatestMails(
-									account,
-									args.limit,
-								);
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												emails.length > 0
-													? `Found ${emails.length} latest email(s) in account "${account}":\n\n` +
-														emails
-															.map(
-																(email: any) =>
-																	`[${email.dateSent}] From: ${email.sender}\nMailbox: ${email.mailbox}\nSubject: ${email.subject}\n${email.content.substring(0, 500)}${email.content.length > 500 ? "..." : ""}`,
-															)
-															.join("\n\n")
-													: `No latest emails found in account "${account}"`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "mail_batch_mark_unread": {
+					const mailModule = await loadModule("mail");
+					const { ids } = args as { ids: string[] };
+					if (!ids?.length) throw new Error("ids is required");
+					const results = await mailModule.batchMarkAsUnread(ids);
+					const ok = results.filter((r: any) => r.success).length;
+					return { content: [{ type: "text", text: `Marked ${ok}/${results.length} as unread.` }], isError: false };
+				}
 
-							default:
-								throw new Error(`Unknown operation: ${args.operation}`);
-						}
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errorMessage.includes("access") ? errorMessage : `Error with mail operation: ${errorMessage}`,
-								},
-							],
-							isError: true,
-						};
-					}
+				case "mail_batch_flag": {
+					const mailModule = await loadModule("mail");
+					const { ids } = args as { ids: string[] };
+					if (!ids?.length) throw new Error("ids is required");
+					const results = await mailModule.batchFlagMessages(ids);
+					const ok = results.filter((r: any) => r.success).length;
+					return { content: [{ type: "text", text: `Flagged ${ok}/${results.length} messages.` }], isError: false };
+				}
+
+				case "mail_batch_unflag": {
+					const mailModule = await loadModule("mail");
+					const { ids } = args as { ids: string[] };
+					if (!ids?.length) throw new Error("ids is required");
+					const results = await mailModule.batchUnflagMessages(ids);
+					const ok = results.filter((r: any) => r.success).length;
+					return { content: [{ type: "text", text: `Unflagged ${ok}/${results.length} messages.` }], isError: false };
+				}
+
+				case "mail_list_mailboxes": {
+					const mailModule = await loadModule("mail");
+					const { account } = args as { account?: string };
+					const mailboxes = await mailModule.listMailboxes({ account });
+					return {
+						content: [{ type: "text", text: mailboxes.length ? JSON.stringify(mailboxes, null, 2) : "No mailboxes found." }],
+						isError: false,
+					};
+				}
+
+				case "mail_list_accounts": {
+					const mailModule = await loadModule("mail");
+					const accounts = await mailModule.listAccounts();
+					return {
+						content: [{ type: "text", text: accounts.length ? JSON.stringify(accounts, null, 2) : "No accounts configured." }],
+						isError: false,
+					};
+				}
+
+				case "mail_create_mailbox": {
+					const mailModule = await loadModule("mail");
+					const { name, account } = args as { name: string; account?: string };
+					if (!name) throw new Error("name is required");
+					const ok = await mailModule.createMailbox({ name, account });
+					return {
+						content: [{ type: "text", text: ok ? `Mailbox "${name}" created.` : `Failed to create mailbox "${name}".` }],
+						isError: !ok,
+					};
+				}
+
+				case "mail_list_attachments": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const attachments = await mailModule.listAttachments(id);
+					return {
+						content: [{ type: "text", text: attachments.length ? JSON.stringify(attachments, null, 2) : "No attachments found." }],
+						isError: false,
+					};
+				}
+
+				case "mail_save_attachment": {
+					const mailModule = await loadModule("mail");
+					const { id, attachmentName, savePath } = args as { id: string; attachmentName: string; savePath: string };
+					if (!id) throw new Error("id is required");
+					if (!attachmentName) throw new Error("attachmentName is required");
+					if (!savePath) throw new Error("savePath is required");
+					const ok = await mailModule.saveAttachment({ id, attachmentName, savePath });
+					return {
+						content: [{ type: "text", text: ok ? `Saved "${attachmentName}" to ${savePath}.` : "Failed to save attachment." }],
+						isError: !ok,
+					};
+				}
+
+				case "mail_list_templates": {
+					const mailModule = await loadModule("mail");
+					const templates = await mailModule.listTemplates();
+					return {
+						content: [{ type: "text", text: templates.length ? JSON.stringify(templates, null, 2) : "No templates saved." }],
+						isError: false,
+					};
+				}
+
+				case "mail_save_template": {
+					const mailModule = await loadModule("mail");
+					const { name, subject, body, to, cc, id } = args as {
+						name: string; subject: string; body: string; to?: string[]; cc?: string[]; id?: string;
+					};
+					if (!name) throw new Error("name is required");
+					if (!subject) throw new Error("subject is required");
+					if (!body) throw new Error("body is required");
+					const template = await mailModule.saveTemplate({ name, subject, body, to, cc, id });
+					return {
+						content: [{ type: "text", text: `Template saved with ID: ${template.id}` }],
+						isError: false,
+					};
+				}
+
+				case "mail_get_template": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const template = await mailModule.getTemplate(id);
+					return {
+						content: [{ type: "text", text: template ? JSON.stringify(template, null, 2) : `Template ${id} not found.` }],
+						isError: false,
+					};
+				}
+
+				case "mail_delete_template": {
+					const mailModule = await loadModule("mail");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await mailModule.deleteTemplate(id);
+					return {
+						content: [{ type: "text", text: ok ? `Template ${id} deleted.` : `Template ${id} not found.` }],
+						isError: false,
+					};
+				}
+
+				case "mail_list_rules": {
+					const mailModule = await loadModule("mail");
+					const rules = await mailModule.listRules();
+					return {
+						content: [{ type: "text", text: rules.length ? JSON.stringify(rules, null, 2) : "No mail rules configured." }],
+						isError: false,
+					};
+				}
+
+				case "mail_enable_rule": {
+					const mailModule = await loadModule("mail");
+					const { name } = args as { name: string };
+					if (!name) throw new Error("name is required");
+					const ok = await mailModule.enableRule(name);
+					return {
+						content: [{ type: "text", text: ok ? `Rule "${name}" enabled.` : `Rule "${name}" not found.` }],
+						isError: !ok,
+					};
+				}
+
+				case "mail_disable_rule": {
+					const mailModule = await loadModule("mail");
+					const { name } = args as { name: string };
+					if (!name) throw new Error("name is required");
+					const ok = await mailModule.disableRule(name);
+					return {
+						content: [{ type: "text", text: ok ? `Rule "${name}" disabled.` : `Rule "${name}" not found.` }],
+						isError: !ok,
+					};
+				}
+
+				case "mail_search_contacts": {
+					const mailModule = await loadModule("mail");
+					const { query } = args as { query: string };
+					if (!query) throw new Error("query is required");
+					const contacts = await mailModule.searchContacts(query);
+					return {
+						content: [{ type: "text", text: contacts.length ? JSON.stringify(contacts, null, 2) : `No contacts found for "${query}".` }],
+						isError: false,
+					};
 				}
 
 				case "reminders": {
@@ -1420,76 +1457,6 @@ function isMessagesArgs(args: unknown): args is {
 	if (message && typeof message !== "string") return false;
 	if (limit && typeof limit !== "number") return false;
 	if (scheduledTime && typeof scheduledTime !== "string") return false;
-
-	return true;
-}
-
-function isMailArgs(args: unknown): args is {
-	operation: "unread" | "search" | "send" | "mailboxes" | "accounts" | "latest";
-	account?: string;
-	mailbox?: string;
-	limit?: number;
-	searchTerm?: string;
-	to?: string;
-	subject?: string;
-	body?: string;
-	cc?: string;
-	bcc?: string;
-} {
-	if (typeof args !== "object" || args === null) return false;
-
-	const {
-		operation,
-		account,
-		mailbox,
-		limit,
-		searchTerm,
-		to,
-		subject,
-		body,
-		cc,
-		bcc,
-	} = args as any;
-
-	if (
-		!operation ||
-		!["unread", "search", "send", "mailboxes", "accounts", "latest"].includes(
-			operation,
-		)
-	) {
-		return false;
-	}
-
-	// Validate required fields based on operation
-	switch (operation) {
-		case "search":
-			if (!searchTerm || typeof searchTerm !== "string") return false;
-			break;
-		case "send":
-			if (
-				!to ||
-				typeof to !== "string" ||
-				!subject ||
-				typeof subject !== "string" ||
-				!body ||
-				typeof body !== "string"
-			)
-				return false;
-			break;
-		case "unread":
-		case "mailboxes":
-		case "accounts":
-		case "latest":
-			// No additional required fields
-			break;
-	}
-
-	// Validate field types if present
-	if (account && typeof account !== "string") return false;
-	if (mailbox && typeof mailbox !== "string") return false;
-	if (limit && typeof limit !== "number") return false;
-	if (cc && typeof cc !== "string") return false;
-	if (bcc && typeof bcc !== "string") return false;
 
 	return true;
 }
