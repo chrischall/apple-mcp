@@ -104,14 +104,17 @@ export async function replyToMessage(params: {
   id: string;
   body: string;
   replyAll?: boolean;
+  account?: string;
 }): Promise<boolean> {
-  const { id, body, replyAll = false } = params;
+  const { id, body, replyAll = false, account } = params;
   validateId(id);
 
   const safeBody = escapeAS(body);
   const replyAllClause = replyAll ? " with reply to all" : "";
+  const senderLine = account ? `set sender of theReply to "${escapeAS(account)}"` : "";
 
   const operation = `set theReply to reply msg with opening window${replyAllClause}
+            ${senderLine}
             set content of theReply to "${safeBody}" & return & return & content of theReply
             send theReply
             return "ok"`;
@@ -151,8 +154,9 @@ export async function forwardMessage(params: {
   id: string;
   to: string[];
   body?: string;
+  account?: string;
 }): Promise<boolean> {
-  const { id, to, body } = params;
+  const { id, to, body, account } = params;
   validateId(id);
 
   const recipientCmds = to
@@ -162,8 +166,10 @@ export async function forwardMessage(params: {
   const bodyLine = body
     ? `set content of theForward to "${escapeAS(body)}" & return & return & content of theForward`
     : "";
+  const senderLine = account ? `set sender of theForward to "${escapeAS(account)}"` : "";
 
   const operation = `set theForward to forward msg with opening window
+            ${senderLine}
             ${recipientCmds}
             ${bodyLine}
             send theForward
@@ -209,7 +215,7 @@ export async function createDraft(params: {
   account?: string;
 }): Promise<boolean> {
   const { to, subject, body, cc, bcc, account } = params;
-  if (!to || to.length === 0) throw new Error("At least one recipient is required");
+  if (!to || to.length === 0) return false;
 
   const safeSubject = escapeAS(subject);
   const safeBody = escapeAS(body);
