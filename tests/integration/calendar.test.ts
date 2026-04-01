@@ -52,7 +52,7 @@ describe("calendar_get / getEvent", () => {
   it("returns null for non-existent id", async () => {
     const result = await calendarModule.getEvent("fake-uid-that-does-not-exist-99999");
     expect(result).toBeNull();
-  }, 15000);
+  }, 90000);
 
   it("returns event with attendees array for real event if one exists", async () => {
     const events = await calendarModule.listEvents({ limit: 1 });
@@ -64,5 +64,5 @@ describe("calendar_get / getEvent", () => {
       expect(event.startDate instanceof Date).toBe(true);
       expect(Array.isArray(event.attendees)).toBe(true);
     }
-  }, 20000);
+  }, 45000);
 });

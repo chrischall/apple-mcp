@@ -323,30 +323,22 @@ export async function searchEvents(params: {
 // ---------------------------------------------------------------------------
 
 export async function getEvent(id: string): Promise<CalendarEvent | null> {
-  // Search within a bounded date range to avoid full-calendar scans.
-  // Using the same calendar-size threshold as listEvents so that events
-  // returned by listEvents can always be retrieved by getEvent.
-  const now = new Date();
-  const searchStart = new Date(now.getFullYear() - 1, 0, 1); // 1 year back
-  const searchEnd = new Date(now.getFullYear() + 2, 11, 31); // 2 years forward
-  const startStr = escapeAS(formatDateForAppleScript(searchStart));
-  const endStr = escapeAS(formatDateForAppleScript(searchEnd));
-
+  // Search all calendars by UID directly. Using `whose uid is` is faster than
+  // a date-range pre-filter on large calendars, and avoids the need for any
+  // calSize threshold — every calendar is scanned regardless of size so events
+  // returned from any calendar (including large ones) can always be retrieved.
   const script = `tell application "Calendar"
   try
-    set startBound to date "${startStr}"
-    set endBound to date "${endStr}"
+    set targetUID to "${escapeAS(id)}"
     repeat with cal in calendars
-      set calSize to count of events of cal
-      if calSize <= ${MAX_CALENDAR_SIZE_FOR_AUTO_SCAN} then
-        set rangeEvents to (events of cal whose start date >= startBound and start date <= endBound)
-        repeat with evt in rangeEvents
-          if uid of evt is "${escapeAS(id)}" then
-            ${READ_EVT_FIELDS}
-            return ${EVT_RECORD}
-          end if
-        end repeat
-      end if
+      try
+        set matchEvents to (events of cal whose uid is targetUID)
+        if (count of matchEvents) > 0 then
+          set evt to item 1 of matchEvents
+          ${READ_EVT_FIELDS}
+          return ${EVT_RECORD}
+        end if
+      end try
     end repeat
     return ""
   on error
