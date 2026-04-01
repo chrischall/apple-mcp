@@ -6,9 +6,9 @@ import { escapeAppleScriptString as escapeAS, formatDateForAppleScript } from ".
 // Date helpers
 // ---------------------------------------------------------------------------
 
-const AS_DATE_STR = `((year of d) as string) & "-" & ((month of d as integer) as string) & "-" & ((day of d) as string) & "-" & ((hours of d) as string) & "-" & ((minutes of d) as string) & "-" & ((seconds of d) as string)`;
+export const AS_DATE_STR = `((year of d) as string) & "-" & ((month of d as integer) as string) & "-" & ((day of d) as string) & "-" & ((hours of d) as string) & "-" & ((minutes of d) as string) & "-" & ((seconds of d) as string)`;
 
-function parseASDate(s: string): Date {
+export function parseASDate(s: string): Date {
   const parts = s.split("-").map(Number);
   if (parts.length === 6 && parts.every(n => !isNaN(n))) {
     return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);

@@ -1,23 +1,13 @@
 // utils/calendar-manage.ts
 import { runAppleScript } from "run-applescript";
 import { escapeAppleScriptString as escapeAS, formatDateForAppleScript } from "./applescript-utils.js";
+import { AS_DATE_STR, parseASDate } from "./calendar-core.js";
 import type { BusyBlock, AvailableSlot } from "./calendar-core.js";
-
-const AS_DATE_STR = `((year of d) as string) & "-" & ((month of d as integer) as string) & "-" & ((day of d) as string) & "-" & ((hours of d) as string) & "-" & ((minutes of d) as string) & "-" & ((seconds of d) as string)`;
 
 // Calendars with more events than this threshold are too slow to scan with
 // AppleScript `whose start date >= ...` (O(n) over all events). Skip large
 // calendars unless the caller explicitly names one.
 const MAX_CALENDAR_SIZE_FOR_AUTO_SCAN = 150;
-
-function parseASDate(s: string): Date {
-  const parts = s.split("-").map(Number);
-  if (parts.length === 6 && parts.every(n => !isNaN(n))) {
-    return new Date(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]);
-  }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? new Date() : d;
-}
 
 // ---------------------------------------------------------------------------
 // getFreeBusy
