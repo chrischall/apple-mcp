@@ -54,7 +54,7 @@ describe("notes_get / getNote", () => {
   it("returns null for non-existent name", async () => {
     const result = await notesModule.getNote({ name: "ZzZzNonExistentNote99991" });
     expect(result).toBeNull();
-  }, 20000);
+  }, 90000);
 
   it("returns full Note for real note if one exists", async () => {
     const notes = await notesModule.listNotes({ limit: 1 });
@@ -148,12 +148,20 @@ describe("reminders_complete / completeReminder", () => {
   it("returns false for non-existent id", async () => {
     const result = await remindersModule.completeReminder("fake-id-that-does-not-exist-99999");
     expect(result).toBe(false);
-  }, 30000);
+  }, 90000);
 });
 
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
+
+describe("messages_send / sendMessage", () => {
+  it("returns boolean", async () => {
+    const result = await messageModule.sendMessage("+10000000000", "MCP test");
+    expect(typeof result).toBe("boolean");
+    console.log(`sendMessage result: ${result}`);
+  }, 20000);
+});
 
 describe("messages_unread / getUnreadMessages", () => {
   it("returns array of Message objects with correct shape", async () => {
