@@ -17,18 +17,22 @@ const PREVIEW_LENGTH = 200;
 
 export async function listFolders(): Promise<NoteFolder[]> {
   const script = `tell application "Notes"
-  set outputText to ""
-  repeat with f in folders
-    set fname to name of f
-    if outputText is not "" then set outputText to outputText & "|||ITEM|||"
-    set outputText to outputText & fname
-  end repeat
-  return outputText
+  try
+    set outputText to ""
+    repeat with f in folders
+      set fname to name of f
+      if outputText is not "" then set outputText to outputText & "|||ITEM|||"
+      set outputText to outputText & fname
+    end repeat
+    return outputText
+  on error errMsg
+    return "error:" & errMsg
+  end try
 end tell`;
   try {
     const raw = await runAppleScript(script);
-    if (!raw.trim()) return [];
-    return raw.split("|||ITEM|||").map(name => ({ name: name.trim() }));
+    if (!raw.trim() || raw.startsWith("error:")) return [];
+    return raw.split("|||ITEM|||").map(name => ({ name }));
   } catch (error) {
     console.error("listFolders error:", error);
     return [];
