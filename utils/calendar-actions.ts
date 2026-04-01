@@ -26,7 +26,11 @@ export async function createEvent(params: {
   const startStr = escapeAS(formatDateForAppleScript(start));
   const endStr = escapeAS(formatDateForAppleScript(end));
   const calClause = calendar
-    ? `try\n      set targetCal to calendar "${escapeAS(calendar)}"\n    on error\n      set targetCal to first calendar whose writable is true\n    end try`
+    ? `try
+      set targetCal to calendar "${escapeAS(calendar)}"
+    on error
+      set targetCal to first calendar whose writable is true
+    end try`
     : `set targetCal to first calendar whose writable is true`;
   const locationLine = location ? `set location of newEvent to "${escapeAS(location)}"` : "";
   const notesLine = notes ? `set description of newEvent to "${escapeAS(notes)}"` : "";
@@ -73,8 +77,18 @@ export async function updateEvent(params: {
 
   const lines: string[] = [];
   if (title !== undefined) lines.push(`set summary of evt to "${escapeAS(title)}"`);
-  if (startDate !== undefined) lines.push(`set start date of evt to date "${escapeAS(formatDateForAppleScript(new Date(startDate)))}"`);
-  if (endDate !== undefined) lines.push(`set end date of evt to date "${escapeAS(formatDateForAppleScript(new Date(endDate)))}"`);
+  if (startDate !== undefined) {
+    const startParsed = new Date(startDate);
+    if (!isNaN(startParsed.getTime())) {
+      lines.push(`set start date of evt to date "${escapeAS(formatDateForAppleScript(startParsed))}"`);
+    }
+  }
+  if (endDate !== undefined) {
+    const endParsed = new Date(endDate);
+    if (!isNaN(endParsed.getTime())) {
+      lines.push(`set end date of evt to date "${escapeAS(formatDateForAppleScript(endParsed))}"`);
+    }
+  }
   if (location !== undefined) lines.push(`set location of evt to "${escapeAS(location)}"`);
   if (notes !== undefined) lines.push(`set description of evt to "${escapeAS(notes)}"`);
   if (url !== undefined) lines.push(`set url of evt to "${escapeAS(url)}"`);
