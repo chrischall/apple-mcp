@@ -125,69 +125,146 @@ const CONTACTS_TOOL: Tool = {
     }
   };
   
-  
-const CALENDAR_TOOL: Tool = {
-  name: "calendar",
-  description: "Search, create, and open calendar events in Apple Calendar app",
+
+const CALENDAR_LIST_TOOL: Tool = {
+  name: "calendar_list",
+  description: "List calendar events in a date range",
   inputSchema: {
     type: "object",
     properties: {
-      operation: {
-        type: "string",
-        description: "Operation to perform: 'search', 'open', 'list', or 'create'",
-        enum: ["search", "open", "list", "create"]
-      },
-      searchText: {
-        type: "string",
-        description: "Text to search for in event titles, locations, and notes (required for search operation)"
-      },
-      eventId: {
-        type: "string",
-        description: "ID of the event to open (required for open operation)"
-      },
-      limit: {
-        type: "number",
-        description: "Number of events to retrieve (optional, default 10)"
-      },
-      fromDate: {
-        type: "string",
-        description: "Start date for search range in ISO format (optional, default is today)"
-      },
-      toDate: {
-        type: "string",
-        description: "End date for search range in ISO format (optional, default is 30 days from now for search, 7 days for list)"
-      },
-      title: {
-        type: "string",
-        description: "Title of the event to create (required for create operation)"
-      },
-      startDate: {
-        type: "string",
-        description: "Start date/time of the event in ISO format (required for create operation)"
-      },
-      endDate: {
-        type: "string",
-        description: "End date/time of the event in ISO format (required for create operation)"
-      },
-      location: {
-        type: "string",
-        description: "Location of the event (optional for create operation)"
-      },
-      notes: {
-        type: "string",
-        description: "Additional notes for the event (optional for create operation)"
-      },
-      isAllDay: {
-        type: "boolean",
-        description: "Whether the event is an all-day event (optional for create operation, default is false)"
-      },
-      calendarName: {
-        type: "string",
-        description: "Name of the calendar to create the event in (optional for create operation, uses default calendar if not specified)"
-      }
+      startDate: { type: "string", description: "Start date in ISO format (default: today)" },
+      endDate:   { type: "string", description: "End date in ISO format (default: 7 days from now)" },
+      calendar:  { type: "string", description: "Calendar name to filter by" },
+      limit:     { type: "number", description: "Max results (default 50)" },
     },
-    required: ["operation"]
-  }
+  },
+};
+
+const CALENDAR_SEARCH_TOOL: Tool = {
+  name: "calendar_search",
+  description: "Search calendar events by title or notes text",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query:     { type: "string", description: "Text to search for in event title or notes" },
+      startDate: { type: "string", description: "Start of search range in ISO format (default: today)" },
+      endDate:   { type: "string", description: "End of search range in ISO format (default: 30 days out)" },
+      calendar:  { type: "string", description: "Calendar name to filter by" },
+      limit:     { type: "number", description: "Max results (default 50)" },
+    },
+    required: ["query"],
+  },
+};
+
+const CALENDAR_GET_TOOL: Tool = {
+  name: "calendar_get",
+  description: "Get full details of a specific calendar event by its UID, including attendees",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Event UID (from calendar_list or calendar_search)" },
+    },
+    required: ["id"],
+  },
+};
+
+const CALENDAR_CREATE_TOOL: Tool = {
+  name: "calendar_create",
+  description: "Create a new calendar event",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title:     { type: "string", description: "Event title" },
+      startDate: { type: "string", description: "Start date/time in ISO format" },
+      endDate:   { type: "string", description: "End date/time in ISO format" },
+      calendar:  { type: "string", description: "Calendar name (uses first writable calendar if omitted)" },
+      location:  { type: "string", description: "Event location" },
+      notes:     { type: "string", description: "Event notes" },
+      url:       { type: "string", description: "Event URL" },
+      isAllDay:  { type: "boolean", description: "Whether this is an all-day event (default false)" },
+    },
+    required: ["title", "startDate", "endDate"],
+  },
+};
+
+const CALENDAR_UPDATE_TOOL: Tool = {
+  name: "calendar_update",
+  description: "Update fields on an existing calendar event",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id:        { type: "string", description: "Event UID" },
+      title:     { type: "string", description: "New event title" },
+      startDate: { type: "string", description: "New start date/time in ISO format" },
+      endDate:   { type: "string", description: "New end date/time in ISO format" },
+      location:  { type: "string", description: "New location" },
+      notes:     { type: "string", description: "New notes" },
+      url:       { type: "string", description: "New URL" },
+    },
+    required: ["id"],
+  },
+};
+
+const CALENDAR_DELETE_TOOL: Tool = {
+  name: "calendar_delete",
+  description: "Delete a calendar event (moves to trash)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Event UID" },
+    },
+    required: ["id"],
+  },
+};
+
+const CALENDAR_OPEN_TOOL: Tool = {
+  name: "calendar_open",
+  description: "Open a specific calendar event in Calendar.app",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Event UID" },
+    },
+    required: ["id"],
+  },
+};
+
+const CALENDAR_LIST_CALENDARS_TOOL: Tool = {
+  name: "calendar_list_calendars",
+  description: "List all calendars in Calendar.app",
+  inputSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+const CALENDAR_GET_FREE_BUSY_TOOL: Tool = {
+  name: "calendar_get_free_busy",
+  description: "Get busy blocks (existing events) in a date range — useful for finding free time",
+  inputSchema: {
+    type: "object",
+    properties: {
+      startDate: { type: "string", description: "Start of range in ISO format" },
+      endDate:   { type: "string", description: "End of range in ISO format" },
+      calendar:  { type: "string", description: "Calendar name to filter by" },
+    },
+    required: ["startDate", "endDate"],
+  },
+};
+
+const CALENDAR_FIND_SLOTS_TOOL: Tool = {
+  name: "calendar_find_slots",
+  description: "Find available time slots in a date range that fit a minimum duration",
+  inputSchema: {
+    type: "object",
+    properties: {
+      startDate:       { type: "string", description: "Start of range in ISO format" },
+      endDate:         { type: "string", description: "End of range in ISO format" },
+      durationMinutes: { type: "number", description: "Minimum slot duration in minutes" },
+      calendar:        { type: "string", description: "Calendar name to filter by" },
+    },
+    required: ["startDate", "endDate", "durationMinutes"],
+  },
 };
   
 const MAPS_TOOL: Tool = {
@@ -559,7 +636,11 @@ const MAIL_SEARCH_CONTACTS_TOOL: Tool = {
 };
 
 const tools = [
-  CONTACTS_TOOL, NOTES_TOOL, MESSAGES_TOOL, REMINDERS_TOOL, CALENDAR_TOOL, MAPS_TOOL,
+  CONTACTS_TOOL, NOTES_TOOL, MESSAGES_TOOL, REMINDERS_TOOL, MAPS_TOOL,
+  // Calendar tools (10)
+  CALENDAR_LIST_TOOL, CALENDAR_SEARCH_TOOL, CALENDAR_GET_TOOL, CALENDAR_CREATE_TOOL,
+  CALENDAR_UPDATE_TOOL, CALENDAR_DELETE_TOOL, CALENDAR_OPEN_TOOL,
+  CALENDAR_LIST_CALENDARS_TOOL, CALENDAR_GET_FREE_BUSY_TOOL, CALENDAR_FIND_SLOTS_TOOL,
   // Mail tools (33)
   MAIL_SEARCH_TOOL, MAIL_LIST_TOOL, MAIL_GET_TOOL, MAIL_SEND_TOOL, MAIL_UNREAD_COUNT_TOOL,
   MAIL_REPLY_TOOL, MAIL_FORWARD_TOOL, MAIL_CREATE_DRAFT_TOOL,
