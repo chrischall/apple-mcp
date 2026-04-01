@@ -989,149 +989,130 @@ function initServer() {
 				}
 
 
-				case "calendar": {
-					if (!isCalendarArgs(args)) {
-						throw new Error("Invalid arguments for calendar tool");
-					}
+				case "calendar_list": {
+					const calendarModule = await loadModule("calendar");
+					const { startDate, endDate, calendar, limit } = args as {
+						startDate?: string; endDate?: string; calendar?: string; limit?: number;
+					};
+					const events = await calendarModule.listEvents({ startDate, endDate, calendar, limit });
+					return {
+						content: [{ type: "text", text: events.length ? JSON.stringify(events, null, 2) : "No events found." }],
+						isError: false,
+					};
+				}
 
-					try {
-						const calendarModule = await loadModule("calendar");
-						const { operation } = args;
+				case "calendar_search": {
+					const calendarModule = await loadModule("calendar");
+					const { query, startDate, endDate, calendar, limit } = args as {
+						query: string; startDate?: string; endDate?: string; calendar?: string; limit?: number;
+					};
+					if (!query) throw new Error("query is required");
+					const events = await calendarModule.searchEvents({ query, startDate, endDate, calendar, limit });
+					return {
+						content: [{ type: "text", text: events.length ? JSON.stringify(events, null, 2) : `No events found matching "${query}".` }],
+						isError: false,
+					};
+				}
 
-						switch (operation) {
-							case "search": {
-								const { searchText, limit, fromDate, toDate } = args;
-								const events = await calendarModule.searchEvents(
-									searchText!,
-									limit,
-									fromDate,
-									toDate,
-								);
+				case "calendar_get": {
+					const calendarModule = await loadModule("calendar");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const event = await calendarModule.getEvent(id);
+					return {
+						content: [{ type: "text", text: event ? JSON.stringify(event, null, 2) : `Event ${id} not found.` }],
+						isError: false,
+					};
+				}
 
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												events.length > 0
-													? `Found ${events.length} events matching "${searchText}":\n\n${events
-															.map(
-																(event) =>
-																	`${event.title} (${new Date(event.startDate!).toLocaleString()} - ${new Date(event.endDate!).toLocaleString()})\n` +
-																	`Location: ${event.location || "Not specified"}\n` +
-																	`Calendar: ${event.calendarName}\n` +
-																	`ID: ${event.id}\n` +
-																	`${event.notes ? `Notes: ${event.notes}\n` : ""}`,
-															)
-															.join("\n\n")}`
-													: `No events found matching "${searchText}".`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "calendar_create": {
+					const calendarModule = await loadModule("calendar");
+					const { title, startDate, endDate, calendar, location, notes, url, isAllDay } = args as {
+						title: string; startDate: string; endDate: string;
+						calendar?: string; location?: string; notes?: string; url?: string; isAllDay?: boolean;
+					};
+					if (!title) throw new Error("title is required");
+					if (!startDate) throw new Error("startDate is required");
+					if (!endDate) throw new Error("endDate is required");
+					const ok = await calendarModule.createEvent({ title, startDate, endDate, calendar, location, notes, url, isAllDay });
+					return {
+						content: [{ type: "text", text: ok ? "Event created successfully." : "Failed to create event." }],
+						isError: !ok,
+					};
+				}
 
-							case "open": {
-								const { eventId } = args;
-								const result = await calendarModule.openEvent(eventId!);
+				case "calendar_update": {
+					const calendarModule = await loadModule("calendar");
+					const { id, title, startDate, endDate, location, notes, url } = args as {
+						id: string; title?: string; startDate?: string; endDate?: string;
+						location?: string; notes?: string; url?: string;
+					};
+					if (!id) throw new Error("id is required");
+					const ok = await calendarModule.updateEvent({ id, title, startDate, endDate, location, notes, url });
+					return {
+						content: [{ type: "text", text: ok ? "Event updated successfully." : "Failed to update event (not found or no fields provided)." }],
+						isError: !ok,
+					};
+				}
 
-								return {
-									content: [
-										{
-											type: "text",
-											text: result.success
-												? result.message
-												: `Error opening event: ${result.message}`,
-										},
-									],
-									isError: !result.success,
-								};
-							}
+				case "calendar_delete": {
+					const calendarModule = await loadModule("calendar");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await calendarModule.deleteEvent(id);
+					return {
+						content: [{ type: "text", text: ok ? "Event deleted." : "Failed to delete event (not found)." }],
+						isError: !ok,
+					};
+				}
 
-							case "list": {
-								const { limit, fromDate, toDate } = args;
-								const events = await calendarModule.getEvents(
-									limit,
-									fromDate,
-									toDate,
-								);
+				case "calendar_open": {
+					const calendarModule = await loadModule("calendar");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await calendarModule.openEvent(id);
+					return {
+						content: [{ type: "text", text: ok ? "Event opened in Calendar.app." : "Failed to open event (not found)." }],
+						isError: !ok,
+					};
+				}
 
-								const startDateText = fromDate
-									? new Date(fromDate).toLocaleDateString()
-									: "today";
-								const endDateText = toDate
-									? new Date(toDate).toLocaleDateString()
-									: "next 7 days";
+				case "calendar_list_calendars": {
+					const calendarModule = await loadModule("calendar");
+					const cals = await calendarModule.listCalendars();
+					return {
+						content: [{ type: "text", text: cals.length ? JSON.stringify(cals, null, 2) : "No calendars found." }],
+						isError: false,
+					};
+				}
 
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												events.length > 0
-													? `Found ${events.length} events from ${startDateText} to ${endDateText}:\n\n${events
-															.map(
-																(event) =>
-																	`${event.title} (${new Date(event.startDate!).toLocaleString()} - ${new Date(event.endDate!).toLocaleString()})\n` +
-																	`Location: ${event.location || "Not specified"}\n` +
-																	`Calendar: ${event.calendarName}\n` +
-																	`ID: ${event.id}`,
-															)
-															.join("\n\n")}`
-													: `No events found from ${startDateText} to ${endDateText}.`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "calendar_get_free_busy": {
+					const calendarModule = await loadModule("calendar");
+					const { startDate, endDate, calendar } = args as {
+						startDate: string; endDate: string; calendar?: string;
+					};
+					if (!startDate) throw new Error("startDate is required");
+					if (!endDate) throw new Error("endDate is required");
+					const blocks = await calendarModule.getFreeBusy({ startDate, endDate, calendar });
+					return {
+						content: [{ type: "text", text: blocks.length ? JSON.stringify(blocks, null, 2) : "No busy blocks found in range." }],
+						isError: false,
+					};
+				}
 
-							case "create": {
-								const {
-									title,
-									startDate,
-									endDate,
-									location,
-									notes,
-									isAllDay,
-									calendarName,
-								} = args;
-								const result = await calendarModule.createEvent(
-									title!,
-									startDate!,
-									endDate!,
-									location,
-									notes,
-									isAllDay,
-									calendarName,
-								);
-								return {
-									content: [
-										{
-											type: "text",
-											text: result.success
-												? `${result.message} Event scheduled from ${new Date(startDate!).toLocaleString()} to ${new Date(endDate!).toLocaleString()}${result.eventId ? `\nEvent ID: ${result.eventId}` : ""}`
-												: `Error creating event: ${result.message}`,
-										},
-									],
-									isError: !result.success,
-								};
-							}
-
-							default:
-								throw new Error(`Unknown calendar operation: ${operation}`);
-						}
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errorMessage.includes("access") ? errorMessage : `Error in calendar tool: ${errorMessage}`,
-								},
-							],
-							isError: true,
-						};
-					}
+				case "calendar_find_slots": {
+					const calendarModule = await loadModule("calendar");
+					const { startDate, endDate, durationMinutes, calendar } = args as {
+						startDate: string; endDate: string; durationMinutes: number; calendar?: string;
+					};
+					if (!startDate) throw new Error("startDate is required");
+					if (!endDate) throw new Error("endDate is required");
+					if (!durationMinutes) throw new Error("durationMinutes is required");
+					const slots = await calendarModule.findAvailableSlots({ startDate, endDate, durationMinutes, calendar });
+					return {
+						content: [{ type: "text", text: slots.length ? JSON.stringify(slots, null, 2) : "No available slots found in range." }],
+						isError: false,
+					};
 				}
 
 				case "maps": {
@@ -1513,67 +1494,6 @@ function isRemindersArgs(args: unknown): args is {
 }
 
 
-function isCalendarArgs(args: unknown): args is {
-	operation: "search" | "open" | "list" | "create";
-	searchText?: string;
-	eventId?: string;
-	limit?: number;
-	fromDate?: string;
-	toDate?: string;
-	title?: string;
-	startDate?: string;
-	endDate?: string;
-	location?: string;
-	notes?: string;
-	isAllDay?: boolean;
-	calendarName?: string;
-} {
-	if (typeof args !== "object" || args === null) {
-		return false;
-	}
-
-	const { operation } = args as { operation?: unknown };
-	if (typeof operation !== "string") {
-		return false;
-	}
-
-	if (!["search", "open", "list", "create"].includes(operation)) {
-		return false;
-	}
-
-	// Check that required parameters are present for each operation
-	if (operation === "search") {
-		const { searchText } = args as { searchText?: unknown };
-		if (typeof searchText !== "string") {
-			return false;
-		}
-	}
-
-	if (operation === "open") {
-		const { eventId } = args as { eventId?: unknown };
-		if (typeof eventId !== "string") {
-			return false;
-		}
-	}
-
-	if (operation === "create") {
-		const { title, startDate, endDate } = args as {
-			title?: unknown;
-			startDate?: unknown;
-			endDate?: unknown;
-		};
-
-		if (
-			typeof title !== "string" ||
-			typeof startDate !== "string" ||
-			typeof endDate !== "string"
-		) {
-			return false;
-		}
-	}
-
-	return true;
-}
 
 function isMapsArgs(args: unknown): args is {
 	operation:
