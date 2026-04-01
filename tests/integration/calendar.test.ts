@@ -134,3 +134,57 @@ describe("calendar_open / openEvent", () => {
     expect(result).toBe(false);
   }, 90000);
 });
+
+describe("calendar_get_free_busy / getFreeBusy", () => {
+  it("returns array of BusyBlock objects", async () => {
+    const now = new Date();
+    const nextWeek = new Date(now);
+    nextWeek.setDate(now.getDate() + 7);
+    const blocks = await calendarModule.getFreeBusy({
+      startDate: now.toISOString(),
+      endDate: nextWeek.toISOString(),
+    });
+    expect(Array.isArray(blocks)).toBe(true);
+    for (const b of blocks) {
+      expect(typeof b.title).toBe("string");
+      expect(b.startDate instanceof Date).toBe(true);
+      expect(b.endDate instanceof Date).toBe(true);
+      expect(typeof b.calendarName).toBe("string");
+    }
+    console.log(`getFreeBusy returned ${blocks.length} busy blocks`);
+  }, 20000);
+});
+
+describe("calendar_find_slots / findAvailableSlots", () => {
+  it("returns array of AvailableSlot objects", async () => {
+    const now = new Date();
+    const nextWeek = new Date(now);
+    nextWeek.setDate(now.getDate() + 7);
+    const slots = await calendarModule.findAvailableSlots({
+      startDate: now.toISOString(),
+      endDate: nextWeek.toISOString(),
+      durationMinutes: 60,
+    });
+    expect(Array.isArray(slots)).toBe(true);
+    for (const s of slots) {
+      expect(s.startDate instanceof Date).toBe(true);
+      expect(s.endDate instanceof Date).toBe(true);
+      // Each slot must be at least durationMinutes long
+      const durationMs = s.endDate.getTime() - s.startDate.getTime();
+      expect(durationMs).toBeGreaterThanOrEqual(60 * 60 * 1000);
+    }
+    console.log(`findAvailableSlots returned ${slots.length} slots`);
+  }, 20000);
+
+  it("returns empty array when range is too small for duration", async () => {
+    const now = new Date();
+    const inTenMinutes = new Date(now.getTime() + 10 * 60 * 1000);
+    const slots = await calendarModule.findAvailableSlots({
+      startDate: now.toISOString(),
+      endDate: inTenMinutes.toISOString(),
+      durationMinutes: 60,
+    });
+    expect(Array.isArray(slots)).toBe(true);
+    expect(slots.length).toBe(0);
+  }, 20000);
+});
