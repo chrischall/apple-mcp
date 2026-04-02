@@ -54,7 +54,7 @@ describe("AppleScript injection prevention", () => {
       const reminders = (await import("../../utils/reminders.js")).default;
 
       const name = "foo\\bar"; // contains a literal backslash
-      await reminders.createReminder(name);
+      await reminders.createReminder({ name });
 
       const script = scriptWith("make new reminder");
       expect(script).toBeDefined();
@@ -73,7 +73,7 @@ describe("AppleScript injection prevention", () => {
       // Quote-only escaping produces `\\"` in the script, where `\\` is a
       // literal backslash and `"` then CLOSES the AppleScript string — injection!
       const name = '\\"evil';
-      await reminders.createReminder(name);
+      await reminders.createReminder({ name });
 
       const script = scriptWith("make new reminder");
       expect(script).toBeDefined();

@@ -37,7 +37,6 @@ function parseReminder(record: string): Reminder | null {
 export async function listLists(): Promise<ReminderList[]> {
   // Batch property access: id of lists and name of lists are fast inline fetches
   const script = `tell application "Reminders"
-  activate
   set ids to id of lists
   set nms to name of lists
   set outputText to ""
@@ -98,7 +97,6 @@ export async function listReminders(params: {
   const batchFetch = buildBatchFetch(completedFilter);
 
   const script = `tell application "Reminders"
-  activate
   try
     set outputText to ""
     set rCount to 0
@@ -166,7 +164,6 @@ export async function searchReminders(params: {
   const batchFetch = buildBatchFetch(nameFilter);
 
   const script = `tell application "Reminders"
-  activate
   try
     set outputText to ""
     set rCount to 0
@@ -240,12 +237,15 @@ export async function createReminder(params: {
     ${dueDateLine}
     return "true"
   on error errMsg
-    return "false"
+    return "false:" & errMsg
   end try
 end tell`;
 
   try {
     const raw = await runAppleScript(script);
+    if (!raw.startsWith("true") && raw.includes(":")) {
+      console.error("createReminder AppleScript error:", raw.slice(raw.indexOf(":") + 1));
+    }
     return raw.trim() === "true";
   } catch (error) {
     console.error("createReminder error:", error);
