@@ -34,6 +34,21 @@ jobs:
       - name: Run unit tests
         run: bun test tests/unit/
 
+      # Package the .skill file
+      - name: Package skill
+        run: |
+          python3 - <<'EOF'
+          import zipfile, pathlib
+
+          skill_name = "apple-mcp"
+          out = pathlib.Path(f"{skill_name}.skill")
+
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+              zf.write(pathlib.Path("SKILL.md"), f"{skill_name}/SKILL.md")
+
+          print(f"Packaged {out} ({out.stat().st_size} bytes)")
+          EOF
+
       - name: Build .mcpb bundle
         run: |
           bun run bundle
@@ -58,5 +73,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: apple-mcp.mcpb
+          files: |
+            apple-mcp.skill
+            apple-mcp.mcpb
           generate_release_notes: true

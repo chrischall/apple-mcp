@@ -4,8 +4,8 @@
   "name": "apple-mcp",
   "display_name": "Apple MCP",
   "version": "1.0.0",
-  "description": "Apple MCP tools for contacts, notes, messages, mail, reminders, calendar, and maps integration",
-  "long_description": "Apple MCP gives LLMs access to Apple's native apps including Contacts, Notes, Messages, Mail, Reminders, Calendar, and Maps. This integration allows LLMs to interact with these apps seamlessly, enabling comprehensive automation of daily tasks like managing contacts, creating notes, sending messages, handling emails, setting reminders, managing calendar events, and navigating with Maps.",
+  "description": "Apple MCP tools for contacts, notes, messages, mail, reminders, calendar, and maps",
+  "long_description": "Apple MCP gives LLMs access to Apple's native macOS apps including Contacts, Notes, Messages, Mail, Reminders, Calendar, and Maps. Provides granular flat tools for every operation — search, read, create, update, delete — enabling comprehensive automation of daily tasks.",
   "author": {
     "name": "Dhravya Shah",
     "email": "dhravya@supermemory.com",
@@ -15,20 +15,10 @@
     "type": "git",
     "url": "git+https://github.com/dhravya/apple-mcp.git"
   },
-  "homepage": "https://supermemory.ai",
+  "homepage": "https://github.com/dhravya/apple-mcp",
   "support": "https://github.com/dhravya/apple-mcp/issues",
   "license": "MIT",
-  "keywords": [
-    "apple",
-    "automation",
-    "productivity",
-    "mail",
-    "email",
-    "calendar",
-    "notes",
-    "reminders",
-    "maps"
-  ],
+  "keywords": ["apple", "automation", "productivity", "mail", "calendar", "notes", "reminders", "messages", "maps", "mcp"],
   "server": {
     "type": "node",
     "entry_point": "dist/bundle.js",
@@ -39,40 +29,69 @@
     }
   },
   "tools": [
-    {
-      "name": "contacts",
-      "description": "Search and retrieve contacts from Apple Contacts app"
-    },
-    {
-      "name": "notes",
-      "description": "Search, retrieve and create notes in Apple Notes app"
-    },
-    {
-      "name": "messages",
-      "description": "Interact with Apple Messages app — send, read, schedule messages and check unread messages"
-    },
-    {
-      "name": "mail",
-      "description": "Interact with Apple Mail app — read unread emails, search emails, and send emails"
-    },
-    {
-      "name": "reminders",
-      "description": "Search, create, and open reminders in Apple Reminders app"
-    },
-    {
-      "name": "calendar",
-      "description": "Search, create, and open calendar events in Apple Calendar app"
-    },
-    {
-      "name": "maps",
-      "description": "Search locations, manage guides, save favorites, and get directions using Apple Maps"
-    }
+    { "name": "contacts", "description": "Search contacts by name" },
+    { "name": "notes_list", "description": "List notes, optionally filtered by folder" },
+    { "name": "notes_search", "description": "Search notes by title or content" },
+    { "name": "notes_get", "description": "Get full content of a note by name" },
+    { "name": "notes_create", "description": "Create a new note" },
+    { "name": "notes_list_folders", "description": "List all Note folders" },
+    { "name": "reminders_list_lists", "description": "List all reminder lists" },
+    { "name": "reminders_list", "description": "List reminders, optionally filtered by list" },
+    { "name": "reminders_search", "description": "Search incomplete reminders by name" },
+    { "name": "reminders_create", "description": "Create a new reminder" },
+    { "name": "reminders_complete", "description": "Mark a reminder complete by ID" },
+    { "name": "messages_send", "description": "Send an iMessage" },
+    { "name": "messages_read", "description": "Read messages from a phone number" },
+    { "name": "messages_unread", "description": "Get unread messages" },
+    { "name": "calendar_list", "description": "List events in a date range" },
+    { "name": "calendar_search", "description": "Search events by title or notes" },
+    { "name": "calendar_get", "description": "Get full details of an event by UID" },
+    { "name": "calendar_create", "description": "Create a new calendar event" },
+    { "name": "calendar_update", "description": "Update fields on an existing event" },
+    { "name": "calendar_delete", "description": "Delete a calendar event" },
+    { "name": "calendar_open", "description": "Open an event in Calendar.app" },
+    { "name": "calendar_list_calendars", "description": "List all calendars" },
+    { "name": "calendar_get_free_busy", "description": "Get busy blocks in a date range" },
+    { "name": "calendar_find_slots", "description": "Find available time slots" },
+    { "name": "maps", "description": "Search locations, get directions, manage guides" },
+    { "name": "mail_search", "description": "Search emails by query, sender, subject, date, flags" },
+    { "name": "mail_list", "description": "List emails in a mailbox" },
+    { "name": "mail_get", "description": "Get full content of an email" },
+    { "name": "mail_send", "description": "Send an email" },
+    { "name": "mail_unread_count", "description": "Get unread count for account or mailbox" },
+    { "name": "mail_reply", "description": "Reply to an email" },
+    { "name": "mail_forward", "description": "Forward an email" },
+    { "name": "mail_create_draft", "description": "Create a draft email" },
+    { "name": "mail_mark_read", "description": "Mark an email as read" },
+    { "name": "mail_mark_unread", "description": "Mark an email as unread" },
+    { "name": "mail_flag", "description": "Flag an email" },
+    { "name": "mail_unflag", "description": "Remove flag from an email" },
+    { "name": "mail_delete", "description": "Delete an email" },
+    { "name": "mail_move", "description": "Move an email to a mailbox" },
+    { "name": "mail_batch_delete", "description": "Delete multiple emails" },
+    { "name": "mail_batch_move", "description": "Move multiple emails to a mailbox" },
+    { "name": "mail_batch_mark_read", "description": "Mark multiple emails as read" },
+    { "name": "mail_batch_mark_unread", "description": "Mark multiple emails as unread" },
+    { "name": "mail_batch_flag", "description": "Flag multiple emails" },
+    { "name": "mail_batch_unflag", "description": "Unflag multiple emails" },
+    { "name": "mail_list_mailboxes", "description": "List mailboxes with unread and total counts" },
+    { "name": "mail_list_accounts", "description": "List all email accounts" },
+    { "name": "mail_create_mailbox", "description": "Create a new mailbox folder" },
+    { "name": "mail_list_attachments", "description": "List attachments on an email" },
+    { "name": "mail_save_attachment", "description": "Save an email attachment to disk" },
+    { "name": "mail_list_templates", "description": "List saved email templates" },
+    { "name": "mail_save_template", "description": "Create or update an email template" },
+    { "name": "mail_get_template", "description": "Get a saved email template by ID" },
+    { "name": "mail_delete_template", "description": "Delete a saved email template" },
+    { "name": "mail_list_rules", "description": "List all mail rules" },
+    { "name": "mail_enable_rule", "description": "Enable a mail rule by name" },
+    { "name": "mail_disable_rule", "description": "Disable a mail rule by name" },
+    { "name": "mail_search_contacts", "description": "Search Contacts by name or email" }
   ],
   "compatibility": {
     "platforms": ["darwin"],
     "runtimes": {
       "node": ">=18.0.0"
     }
-  },
-  "user_config": {}
+  }
 }

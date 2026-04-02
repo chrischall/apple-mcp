@@ -24,7 +24,8 @@
 	},
 	"files": [
 		"dist",
-		"manifest.json"
+		"manifest.json",
+		"SKILL.md"
 	],
 	"scripts": {
 		"dev": "bun run index.ts",
@@ -37,15 +38,11 @@
 		"test:unit": "bun test tests/unit/",
 		"test:watch": "bun test tests/**/*.test.ts --preload ./tests/setup.ts --watch",
 		"test:contacts": "bun run test-runner.ts contacts",
-		"test:contacts-full": "bun test tests/integration/contacts.test.ts --preload ./tests/setup.ts",
-		"test:messages": "bun test tests/integration/messages.test.ts --preload ./tests/setup.ts",
-		"test:notes": "bun test tests/integration/notes.test.ts --preload ./tests/setup.ts",
-		"test:mail": "bun test tests/integration/mail.test.ts --preload ./tests/setup.ts",
-		"test:reminders": "bun test tests/integration/reminders.test.ts --preload ./tests/setup.ts",
-		"test:calendar": "bun test tests/integration/calendar.test.ts --preload ./tests/setup.ts",
-		"test:maps": "bun test tests/integration/maps.test.ts --preload ./tests/setup.ts",
-		"test:web-search": "bun test tests/integration/web-search.test.ts --preload ./tests/setup.ts",
-		"test:mcp": "bun test tests/mcp/handlers.test.ts --preload ./tests/setup.ts"
+		"test:contacts-full": "bun test tests/integration/contacts.test.ts",
+		"test:notes-reminders-messages": "bun test tests/integration/notes-reminders-messages.test.ts",
+		"test:mail": "bun test tests/integration/mail.test.ts",
+		"test:calendar": "bun test tests/integration/calendar.test.ts",
+		"test:maps": "bun test tests/integration/maps.test.ts"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",
