@@ -272,237 +272,140 @@ function initServer() {
 					}
 				}
 
-				case "notes": {
-					if (!isNotesArgs(args)) {
-						throw new Error("Invalid arguments for notes tool");
-					}
-
-					try {
-						const notesModule = await loadModule("notes");
-						const { operation } = args;
-
-						switch (operation) {
-							case "search": {
-								if (!args.searchText) {
-									throw new Error(
-										"Search text is required for search operation",
-									);
-								}
-
-								const foundNotes = await notesModule.findNote(args.searchText);
-								return {
-									content: [
-										{
-											type: "text",
-											text: foundNotes.length
-												? foundNotes
-														.map((note) => `${note.name}:\n${note.content}`)
-														.join("\n\n")
-												: `No notes found for "${args.searchText}"`,
-										},
-									],
-									isError: false,
-								};
-							}
-
-							case "list": {
-								const allNotes = await notesModule.getAllNotes();
-								return {
-									content: [
-										{
-											type: "text",
-											text: allNotes.length
-												? allNotes
-														.map((note) => `${note.name}:\n${note.content}`)
-														.join("\n\n")
-												: "No notes exist.",
-										},
-									],
-									isError: false,
-								};
-							}
-
-							case "create": {
-								if (!args.title || !args.body) {
-									throw new Error(
-										"Title and body are required for create operation",
-									);
-								}
-
-								const result = await notesModule.createNote(
-									args.title,
-									args.body,
-									args.folderName,
-								);
-
-								return {
-									content: [
-										{
-											type: "text",
-											text: result.success
-												? `Created note "${args.title}" in folder "${result.folderName}"${result.usedDefaultFolder ? " (created new folder)" : ""}.`
-												: `Failed to create note: ${result.message}`,
-										},
-									],
-									isError: !result.success,
-								};
-							}
-
-							default:
-								throw new Error(`Unknown operation: ${operation}`);
-						}
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errorMessage.includes("access") ? errorMessage : `Error accessing notes: ${errorMessage}`,
-								},
-							],
-							isError: true,
-						};
-					}
+				case "notes_list": {
+					const notesModule = await loadModule("notes");
+					const { folder, limit } = args as { folder?: string; limit?: number };
+					const notes = await notesModule.listNotes({ folder, limit });
+					return {
+						content: [{ type: "text", text: notes.length ? JSON.stringify(notes, null, 2) : "No notes found." }],
+						isError: false,
+					};
 				}
 
-				case "messages": {
-					if (!isMessagesArgs(args)) {
-						throw new Error("Invalid arguments for messages tool");
-					}
+				case "notes_search": {
+					const notesModule = await loadModule("notes");
+					const { query, folder, limit } = args as { query: string; folder?: string; limit?: number };
+					if (!query) throw new Error("query is required");
+					const notes = await notesModule.searchNotes({ query, folder, limit });
+					return {
+						content: [{ type: "text", text: notes.length ? JSON.stringify(notes, null, 2) : `No notes found for "${query}".` }],
+						isError: false,
+					};
+				}
 
-					try {
-						const messageModule = await loadModule("message");
+				case "notes_get": {
+					const notesModule = await loadModule("notes");
+					const { name, folder } = args as { name: string; folder?: string };
+					if (!name) throw new Error("name is required");
+					const note = await notesModule.getNote({ name, folder });
+					return {
+						content: [{ type: "text", text: note ? JSON.stringify(note, null, 2) : `Note "${name}" not found.` }],
+						isError: false,
+					};
+				}
 
-						switch (args.operation) {
-							case "send": {
-								if (!args.phoneNumber || !args.message) {
-									throw new Error(
-										"Phone number and message are required for send operation",
-									);
-								}
-								await messageModule.sendMessage(args.phoneNumber, args.message);
-								return {
-									content: [
-										{
-											type: "text",
-											text: `Message sent to ${args.phoneNumber}`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "notes_create": {
+					const notesModule = await loadModule("notes");
+					const { title, body, folder } = args as { title: string; body: string; folder?: string };
+					if (!title || !body) throw new Error("title and body are required");
+					const ok = await notesModule.createNote({ title, body, folder });
+					return {
+						content: [{ type: "text", text: ok ? `Created note "${title}".` : `Failed to create note "${title}".` }],
+						isError: !ok,
+					};
+				}
 
-							case "read": {
-								if (!args.phoneNumber) {
-									throw new Error(
-										"Phone number is required for read operation",
-									);
-								}
-								const messages = await messageModule.readMessages(
-									args.phoneNumber,
-									args.limit,
-								);
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												messages.length > 0
-													? messages
-															.map(
-																(msg) =>
-																	`[${new Date(msg.date).toLocaleString()}] ${msg.is_from_me ? "Me" : msg.sender}: ${msg.content}`,
-															)
-															.join("\n")
-													: "No messages found",
-										},
-									],
-									isError: false,
-								};
-							}
+				case "notes_list_folders": {
+					const notesModule = await loadModule("notes");
+					const folders = await notesModule.listFolders();
+					return {
+						content: [{ type: "text", text: folders.length ? JSON.stringify(folders, null, 2) : "No folders found." }],
+						isError: false,
+					};
+				}
 
-							case "schedule": {
-								if (!args.phoneNumber || !args.message || !args.scheduledTime) {
-									throw new Error(
-										"Phone number, message, and scheduled time are required for schedule operation",
-									);
-								}
-								const scheduledMsg = await messageModule.scheduleMessage(
-									args.phoneNumber,
-									args.message,
-									new Date(args.scheduledTime),
-								);
-								return {
-									content: [
-										{
-											type: "text",
-											text: `Message scheduled to be sent to ${args.phoneNumber} at ${scheduledMsg.scheduledTime}`,
-										},
-									],
-									isError: false,
-								};
-							}
+				case "reminders_list_lists": {
+					const remindersModule = await loadModule("reminders");
+					const lists = await remindersModule.listLists();
+					return {
+						content: [{ type: "text", text: lists.length ? JSON.stringify(lists, null, 2) : "No reminder lists found." }],
+						isError: false,
+					};
+				}
 
-							case "unread": {
-								const messages = await messageModule.getUnreadMessages(
-									args.limit,
-								);
+				case "reminders_list": {
+					const remindersModule = await loadModule("reminders");
+					const { list, includeCompleted, limit } = args as { list?: string; includeCompleted?: boolean; limit?: number };
+					const reminders = await remindersModule.listReminders({ list, includeCompleted, limit });
+					return {
+						content: [{ type: "text", text: reminders.length ? JSON.stringify(reminders, null, 2) : "No reminders found." }],
+						isError: false,
+					};
+				}
 
-								// Look up contact names for all messages
-								const contactsModule = await loadModule("contacts");
-								const messagesWithNames = await Promise.all(
-									messages.map(async (msg) => {
-										// Only look up names for messages not from me
-										if (!msg.is_from_me) {
-											const contactName =
-												await contactsModule.findContactByPhone(msg.sender);
-											return {
-												...msg,
-												displayName: contactName || msg.sender, // Use contact name if found, otherwise use phone/email
-											};
-										}
-										return {
-											...msg,
-											displayName: "Me",
-										};
-									}),
-								);
+				case "reminders_search": {
+					const remindersModule = await loadModule("reminders");
+					const { query, list, limit } = args as { query: string; list?: string; limit?: number };
+					if (!query) throw new Error("query is required");
+					const reminders = await remindersModule.searchReminders({ query, list, limit });
+					return {
+						content: [{ type: "text", text: reminders.length ? JSON.stringify(reminders, null, 2) : `No reminders found matching "${query}".` }],
+						isError: false,
+					};
+				}
 
-								return {
-									content: [
-										{
-											type: "text",
-											text:
-												messagesWithNames.length > 0
-													? `Found ${messagesWithNames.length} unread message(s):\n` +
-														messagesWithNames
-															.map(
-																(msg) =>
-																	`[${new Date(msg.date).toLocaleString()}] From ${msg.displayName}:\n${msg.content}`,
-															)
-															.join("\n\n")
-													: "No unread messages found",
-										},
-									],
-									isError: false,
-								};
-							}
+				case "reminders_create": {
+					const remindersModule = await loadModule("reminders");
+					const { name, list, notes, dueDate } = args as { name: string; list?: string; notes?: string; dueDate?: string };
+					if (!name) throw new Error("name is required");
+					const ok = await remindersModule.createReminder({ name, list, notes, dueDate });
+					return {
+						content: [{ type: "text", text: ok ? `Created reminder "${name}".` : `Failed to create reminder "${name}".` }],
+						isError: !ok,
+					};
+				}
 
-							default:
-								throw new Error(`Unknown operation: ${args.operation}`);
-						}
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errorMessage.includes("access") ? errorMessage : `Error with messages operation: ${errorMessage}`,
-								},
-							],
-							isError: true,
-						};
-					}
+				case "reminders_complete": {
+					const remindersModule = await loadModule("reminders");
+					const { id } = args as { id: string };
+					if (!id) throw new Error("id is required");
+					const ok = await remindersModule.completeReminder(id);
+					return {
+						content: [{ type: "text", text: ok ? "Reminder marked as completed." : "Reminder not found or could not be completed." }],
+						isError: !ok,
+					};
+				}
+
+				case "messages_send": {
+					const messageModule = await loadModule("message");
+					const { phoneNumber, message } = args as { phoneNumber: string; message: string };
+					if (!phoneNumber || !message) throw new Error("phoneNumber and message are required");
+					const ok = await messageModule.sendMessage(phoneNumber, message);
+					return {
+						content: [{ type: "text", text: ok ? `Message sent to ${phoneNumber}.` : `Failed to send message to ${phoneNumber}.` }],
+						isError: !ok,
+					};
+				}
+
+				case "messages_read": {
+					const messageModule = await loadModule("message");
+					const { phoneNumber, limit } = args as { phoneNumber: string; limit?: number };
+					if (!phoneNumber) throw new Error("phoneNumber is required");
+					const messages = await messageModule.readMessages(phoneNumber, limit);
+					return {
+						content: [{ type: "text", text: messages.length ? JSON.stringify(messages, null, 2) : "No messages found." }],
+						isError: false,
+					};
+				}
+
+				case "messages_unread": {
+					const messageModule = await loadModule("message");
+					const { limit } = args as { limit?: number };
+					const messages = await messageModule.getUnreadMessages(limit);
+					return {
+						content: [{ type: "text", text: messages.length ? JSON.stringify(messages, null, 2) : "No unread messages found." }],
+						isError: false,
+					};
 				}
 
 				case "mail_search": {
@@ -861,133 +764,6 @@ function initServer() {
 						isError: false,
 					};
 				}
-
-				case "reminders": {
-					if (!isRemindersArgs(args)) {
-						throw new Error("Invalid arguments for reminders tool");
-					}
-
-					try {
-						const remindersModule = await loadModule("reminders");
-
-						const { operation } = args;
-
-						if (operation === "list") {
-							// List all reminders
-							const lists = await remindersModule.getAllLists();
-							const allReminders = await remindersModule.getAllReminders();
-							return {
-								content: [
-									{
-										type: "text",
-										text: `Found ${lists.length} lists and ${allReminders.length} reminders.`,
-									},
-								],
-								lists,
-								reminders: allReminders,
-								isError: false,
-							};
-						} else if (operation === "search") {
-							// Search for reminders
-							const { searchText } = args;
-							const results = await remindersModule.searchReminders(
-								searchText!,
-							);
-							return {
-								content: [
-									{
-										type: "text",
-										text:
-											results.length > 0
-												? `Found ${results.length} reminders matching "${searchText}".`
-												: `No reminders found matching "${searchText}".`,
-									},
-								],
-								reminders: results,
-								isError: false,
-							};
-						} else if (operation === "open") {
-							// Open a reminder
-							const { searchText } = args;
-							const result = await remindersModule.openReminder(searchText!);
-							return {
-								content: [
-									{
-										type: "text",
-										text: result.success
-											? `Opened Reminders app. Found reminder: ${result.reminder?.name}`
-											: result.message,
-									},
-								],
-								...result,
-								isError: !result.success,
-							};
-						} else if (operation === "create") {
-							// Create a reminder
-							const { name, listName, notes, dueDate } = args;
-							const result = await remindersModule.createReminder(
-								name!,
-								listName,
-								notes,
-								dueDate,
-							);
-							return {
-								content: [
-									{
-										type: "text",
-										text: `Created reminder "${result.name}" ${listName ? `in list "${listName}"` : ""}.`,
-									},
-								],
-								success: true,
-								reminder: result,
-								isError: false,
-							};
-						} else if (operation === "listById") {
-							// Get reminders from a specific list by ID
-							const { listId, props } = args;
-							const results = await remindersModule.getRemindersFromListById(
-								listId!,
-								props,
-							);
-							return {
-								content: [
-									{
-										type: "text",
-										text:
-											results.length > 0
-												? `Found ${results.length} reminders in list with ID "${listId}".`
-												: `No reminders found in list with ID "${listId}".`,
-									},
-								],
-								reminders: results,
-								isError: false,
-							};
-						}
-
-						return {
-							content: [
-								{
-									type: "text",
-									text: "Unknown operation",
-								},
-							],
-							isError: true,
-						};
-					} catch (error) {
-						console.error("Error in reminders tool:", error);
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						return {
-							content: [
-								{
-									type: "text",
-									text: errorMessage.includes("access") ? errorMessage : `Error in reminders tool: ${errorMessage}`,
-								},
-							],
-							isError: true,
-						};
-					}
-				}
-
 
 				case "calendar_list": {
 					const calendarModule = await loadModule("calendar");
@@ -1352,148 +1128,6 @@ function isContactsArgs(args: unknown): args is { name?: string } {
 		(!("name" in args) || typeof (args as { name: string }).name === "string")
 	);
 }
-
-function isNotesArgs(args: unknown): args is {
-	operation: "search" | "list" | "create";
-	searchText?: string;
-	title?: string;
-	body?: string;
-	folderName?: string;
-} {
-	if (typeof args !== "object" || args === null) {
-		return false;
-	}
-
-	const { operation } = args as { operation?: unknown };
-	if (typeof operation !== "string") {
-		return false;
-	}
-
-	if (!["search", "list", "create"].includes(operation)) {
-		return false;
-	}
-
-	// Validate fields based on operation
-	if (operation === "search") {
-		const { searchText } = args as { searchText?: unknown };
-		if (typeof searchText !== "string" || searchText === "") {
-			return false;
-		}
-	}
-
-	if (operation === "create") {
-		const { title, body } = args as { title?: unknown; body?: unknown };
-		if (typeof title !== "string" || title === "" || typeof body !== "string") {
-			return false;
-		}
-
-		// Check folderName if provided
-		const { folderName } = args as { folderName?: unknown };
-		if (
-			folderName !== undefined &&
-			(typeof folderName !== "string" || folderName === "")
-		) {
-			return false;
-		}
-	}
-
-	return true;
-}
-
-function isMessagesArgs(args: unknown): args is {
-	operation: "send" | "read" | "schedule" | "unread";
-	phoneNumber?: string;
-	message?: string;
-	limit?: number;
-	scheduledTime?: string;
-} {
-	if (typeof args !== "object" || args === null) return false;
-
-	const { operation, phoneNumber, message, limit, scheduledTime } = args as any;
-
-	if (
-		!operation ||
-		!["send", "read", "schedule", "unread"].includes(operation)
-	) {
-		return false;
-	}
-
-	// Validate required fields based on operation
-	switch (operation) {
-		case "send":
-		case "schedule":
-			if (!phoneNumber || !message) return false;
-			if (operation === "schedule" && !scheduledTime) return false;
-			break;
-		case "read":
-			if (!phoneNumber) return false;
-			break;
-		case "unread":
-			// No additional required fields
-			break;
-	}
-
-	// Validate field types if present
-	if (phoneNumber && typeof phoneNumber !== "string") return false;
-	if (message && typeof message !== "string") return false;
-	if (limit && typeof limit !== "number") return false;
-	if (scheduledTime && typeof scheduledTime !== "string") return false;
-
-	return true;
-}
-
-function isRemindersArgs(args: unknown): args is {
-	operation: "list" | "search" | "open" | "create" | "listById";
-	searchText?: string;
-	name?: string;
-	listName?: string;
-	listId?: string;
-	props?: string[];
-	notes?: string;
-	dueDate?: string;
-} {
-	if (typeof args !== "object" || args === null) {
-		return false;
-	}
-
-	const { operation } = args as any;
-	if (typeof operation !== "string") {
-		return false;
-	}
-
-	if (!["list", "search", "open", "create", "listById"].includes(operation)) {
-		return false;
-	}
-
-	// For search and open operations, searchText is required
-	if (
-		(operation === "search" || operation === "open") &&
-		(typeof (args as any).searchText !== "string" ||
-			(args as any).searchText === "")
-	) {
-		return false;
-	}
-
-	// For create operation, name is required
-	if (
-		operation === "create" &&
-		(typeof (args as any).name !== "string" || (args as any).name === "")
-	) {
-		return false;
-	}
-
-	// For listById operation, listId is required
-	if (
-		operation === "listById" &&
-		(typeof (args as any).listId !== "string" || (args as any).listId === "")
-	) {
-		return false;
-	}
-
-	return true;
-}
-
-
 
 function isMapsArgs(args: unknown): args is {
 	operation:
