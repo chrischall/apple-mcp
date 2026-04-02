@@ -14,117 +14,163 @@ const CONTACTS_TOOL: Tool = {
     }
   };
   
-  const NOTES_TOOL: Tool = {
-    name: "notes", 
-    description: "Search, retrieve and create notes in Apple Notes app",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "Operation to perform: 'search', 'list', or 'create'",
-          enum: ["search", "list", "create"]
-        },
-        searchText: {
-          type: "string",
-          description: "Text to search for in notes (required for search operation)"
-        },
-        title: {
-          type: "string",
-          description: "Title of the note to create (required for create operation)"
-        },
-        body: {
-          type: "string",
-          description: "Content of the note to create (required for create operation)"
-        },
-        folderName: {
-          type: "string",
-          description: "Name of the folder to create the note in (optional for create operation, defaults to 'Claude')"
-        }
-      },
-      required: ["operation"]
-    }
-  };
-  
-  const MESSAGES_TOOL: Tool = {
-    name: "messages",
-    description: "Interact with Apple Messages app - send, read, schedule messages and check unread messages",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "Operation to perform: 'send', 'read', 'schedule', or 'unread'",
-          enum: ["send", "read", "schedule", "unread"]
-        },
-        phoneNumber: {
-          type: "string",
-          description: "Phone number to send message to (required for send, read, and schedule operations)"
-        },
-        message: {
-          type: "string",
-          description: "Message to send (required for send and schedule operations)"
-        },
-        limit: {
-          type: "number",
-          description: "Number of messages to read (optional, for read and unread operations)"
-        },
-        scheduledTime: {
-          type: "string",
-          description: "ISO string of when to send the message (required for schedule operation)"
-        }
-      },
-      required: ["operation"]
-    }
-  };
-  
-  const REMINDERS_TOOL: Tool = {
-    name: "reminders",
-    description: "Search, create, and open reminders in Apple Reminders app",
-    inputSchema: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "Operation to perform: 'list', 'search', 'open', 'create', or 'listById'",
-          enum: ["list", "search", "open", "create", "listById"]
-        },
-        searchText: {
-          type: "string",
-          description: "Text to search for in reminders (required for search and open operations)"
-        },
-        name: {
-          type: "string",
-          description: "Name of the reminder to create (required for create operation)"
-        },
-        listName: {
-          type: "string",
-          description: "Name of the list to create the reminder in (optional for create operation)"
-        },
-        listId: {
-          type: "string",
-          description: "ID of the list to get reminders from (required for listById operation)"
-        },
-        props: {
-          type: "array",
-          items: {
-            type: "string"
-          },
-          description: "Properties to include in the reminders (optional for listById operation)"
-        },
-        notes: {
-          type: "string",
-          description: "Additional notes for the reminder (optional for create operation)"
-        },
-        dueDate: {
-          type: "string",
-          description: "Due date for the reminder in ISO format (optional for create operation)"
-        }
-      },
-      required: ["operation"]
-    }
-  };
-  
+const NOTES_LIST_TOOL: Tool = {
+  name: "notes_list",
+  description: "List notes in Apple Notes, optionally filtered by folder",
+  inputSchema: {
+    type: "object",
+    properties: {
+      folder: { type: "string", description: "Folder name to filter by (optional)" },
+      limit:  { type: "number", description: "Max results (default 50)" },
+    },
+  },
+};
+
+const NOTES_SEARCH_TOOL: Tool = {
+  name: "notes_search",
+  description: "Search notes in Apple Notes by title or content",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query:  { type: "string", description: "Text to search for" },
+      folder: { type: "string", description: "Folder name to filter by (optional)" },
+      limit:  { type: "number", description: "Max results (default 50)" },
+    },
+    required: ["query"],
+  },
+};
+
+const NOTES_GET_TOOL: Tool = {
+  name: "notes_get",
+  description: "Get the full content of a specific note by name",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name:   { type: "string", description: "Exact note title" },
+      folder: { type: "string", description: "Folder to search in (optional)" },
+    },
+    required: ["name"],
+  },
+};
+
+const NOTES_CREATE_TOOL: Tool = {
+  name: "notes_create",
+  description: "Create a new note in Apple Notes",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title:  { type: "string", description: "Note title" },
+      body:   { type: "string", description: "Note content" },
+      folder: { type: "string", description: "Folder to create note in (default: Notes)" },
+    },
+    required: ["title", "body"],
+  },
+};
+
+const NOTES_LIST_FOLDERS_TOOL: Tool = {
+  name: "notes_list_folders",
+  description: "List all folders in Apple Notes",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const REMINDERS_LIST_LISTS_TOOL: Tool = {
+  name: "reminders_list_lists",
+  description: "List all reminder lists in Apple Reminders",
+  inputSchema: { type: "object", properties: {} },
+};
+
+const REMINDERS_LIST_TOOL: Tool = {
+  name: "reminders_list",
+  description: "List reminders, optionally filtered by list name",
+  inputSchema: {
+    type: "object",
+    properties: {
+      list:             { type: "string", description: "Reminder list name to filter by (optional)" },
+      includeCompleted: { type: "boolean", description: "Include completed reminders (default false)" },
+      limit:            { type: "number", description: "Max results (default 50)" },
+    },
+  },
+};
+
+const REMINDERS_SEARCH_TOOL: Tool = {
+  name: "reminders_search",
+  description: "Search incomplete reminders by name",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", description: "Text to search for in reminder names" },
+      list:  { type: "string", description: "Reminder list name to filter by (optional)" },
+      limit: { type: "number", description: "Max results (default 50)" },
+    },
+    required: ["query"],
+  },
+};
+
+const REMINDERS_CREATE_TOOL: Tool = {
+  name: "reminders_create",
+  description: "Create a new reminder in Apple Reminders",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name:    { type: "string", description: "Reminder name" },
+      list:    { type: "string", description: "List to add reminder to (optional, uses first list if omitted)" },
+      notes:   { type: "string", description: "Additional notes (optional)" },
+      dueDate: { type: "string", description: "Due date in ISO format (optional)" },
+    },
+    required: ["name"],
+  },
+};
+
+const REMINDERS_COMPLETE_TOOL: Tool = {
+  name: "reminders_complete",
+  description: "Mark a reminder as completed by its ID",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: { type: "string", description: "Reminder ID (from reminders_list or reminders_search)" },
+    },
+    required: ["id"],
+  },
+};
+
+const MESSAGES_SEND_TOOL: Tool = {
+  name: "messages_send",
+  description: "Send an iMessage to a phone number",
+  inputSchema: {
+    type: "object",
+    properties: {
+      phoneNumber: { type: "string", description: "Recipient phone number" },
+      message:     { type: "string", description: "Message text to send" },
+    },
+    required: ["phoneNumber", "message"],
+  },
+};
+
+const MESSAGES_READ_TOOL: Tool = {
+  name: "messages_read",
+  description: "Read recent messages from a phone number",
+  inputSchema: {
+    type: "object",
+    properties: {
+      phoneNumber: { type: "string", description: "Phone number to read messages from" },
+      limit:       { type: "number", description: "Max messages to return (default 10)" },
+    },
+    required: ["phoneNumber"],
+  },
+};
+
+const MESSAGES_UNREAD_TOOL: Tool = {
+  name: "messages_unread",
+  description: "Get unread messages from Apple Messages",
+  inputSchema: {
+    type: "object",
+    properties: {
+      limit: { type: "number", description: "Max messages to return (default 10)" },
+    },
+  },
+};
+
+
 
 const CALENDAR_LIST_TOOL: Tool = {
   name: "calendar_list",
@@ -636,7 +682,13 @@ const MAIL_SEARCH_CONTACTS_TOOL: Tool = {
 };
 
 const tools = [
-  CONTACTS_TOOL, NOTES_TOOL, MESSAGES_TOOL, REMINDERS_TOOL, MAPS_TOOL,
+  CONTACTS_TOOL, MAPS_TOOL,
+  // Notes tools (5)
+  NOTES_LIST_TOOL, NOTES_SEARCH_TOOL, NOTES_GET_TOOL, NOTES_CREATE_TOOL, NOTES_LIST_FOLDERS_TOOL,
+  // Reminders tools (5)
+  REMINDERS_LIST_LISTS_TOOL, REMINDERS_LIST_TOOL, REMINDERS_SEARCH_TOOL, REMINDERS_CREATE_TOOL, REMINDERS_COMPLETE_TOOL,
+  // Messages tools (3)
+  MESSAGES_SEND_TOOL, MESSAGES_READ_TOOL, MESSAGES_UNREAD_TOOL,
   // Calendar tools (10)
   CALENDAR_LIST_TOOL, CALENDAR_SEARCH_TOOL, CALENDAR_GET_TOOL, CALENDAR_CREATE_TOOL,
   CALENDAR_UPDATE_TOOL, CALENDAR_DELETE_TOOL, CALENDAR_OPEN_TOOL,
