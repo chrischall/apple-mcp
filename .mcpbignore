@@ -1,0 +1,24 @@
+# Source — dist/bundle.js is the self-contained entry point
+index.ts
+tools.ts
+utils/
+tests/
+docs/
+test-runner.ts
+TEST_README.md
+
+# Dev tooling
+node_modules/
+tsconfig.json
+bun.lockb
+
+# Artifacts (generated; not needed inside the bundle)
+*.skill
+*.dxt
+*.mcpb
+
+# CI / GitHub
+.github/
+.claude/
+.gitignore
+.gitattributes

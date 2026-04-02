@@ -3,16 +3,12 @@
 import { spawn } from "bun";
 
 const testCommands = {
-  "contacts": "bun test tests/integration/contacts-simple.test.ts --preload ./tests/setup.ts",
-  "messages": "bun test tests/integration/messages.test.ts --preload ./tests/setup.ts", 
-  "notes": "bun test tests/integration/notes.test.ts --preload ./tests/setup.ts",
-  "mail": "bun test tests/integration/mail.test.ts --preload ./tests/setup.ts",
-  "reminders": "bun test tests/integration/reminders.test.ts --preload ./tests/setup.ts",
-  "calendar": "bun test tests/integration/calendar.test.ts --preload ./tests/setup.ts",
-  "maps": "bun test tests/integration/maps.test.ts --preload ./tests/setup.ts",
-  "web-search": "bun test tests/integration/web-search.test.ts --preload ./tests/setup.ts",
-  "mcp": "bun test tests/mcp/handlers.test.ts --preload ./tests/setup.ts",
-  "all": "bun test tests/**/*.test.ts --preload ./tests/setup.ts"
+  "contacts": "bun test tests/integration/contacts-simple.test.ts",
+  "notes-reminders-messages": "bun test tests/integration/notes-reminders-messages.test.ts",
+  "mail": "bun test tests/integration/mail.test.ts",
+  "calendar": "bun test tests/integration/calendar.test.ts",
+  "maps": "bun test tests/integration/maps.test.ts",
+  "all": "bun test tests/integration/ tests/unit/",
 };
 
 async function runTest(testName: string) {
