@@ -61,18 +61,6 @@ end tell`;
   }
 }
 
-// Build a batch-fetch block for a list, fetching all properties inline.
-// Key pattern: "prop of (reminders of l whose ...)" must be done inline (not from a var)
-// because materializing a filtered list reference to a variable breaks property access.
-function buildBatchFetch(completedFilter: string): string {
-  return `set ids to id of (reminders of l ${completedFilter})
-        set nms to name of (reminders of l ${completedFilter})
-        set bods to body of (reminders of l ${completedFilter})
-        set dues to due date of (reminders of l ${completedFilter})
-        set priors to priority of (reminders of l ${completedFilter})
-        set compls to completed of (reminders of l ${completedFilter})`;
-}
-
 export async function listReminders(params: {
   list?: string;
   includeCompleted?: boolean;
