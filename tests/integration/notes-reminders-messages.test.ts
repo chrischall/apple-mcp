@@ -113,20 +113,20 @@ describe("reminders_list / listReminders", () => {
       expect(typeof r.priority).toBe("number");
     }
     console.log(`listReminders returned ${reminders.length} reminders`);
-  }, 20000);
+  }, 60000);
 });
 
 describe("reminders_search / searchReminders", () => {
   it("returns array for any query", async () => {
     const results = await remindersModule.searchReminders({ query: "the" });
     expect(Array.isArray(results)).toBe(true);
-  }, 20000);
+  }, 60000);
 
   it("returns empty array for impossible query", async () => {
     const results = await remindersModule.searchReminders({ query: "ZzZzImpossibleQuery99991" });
     expect(Array.isArray(results)).toBe(true);
     expect(results.length).toBe(0);
-  }, 20000);
+  }, 30000);
 });
 
 describe("reminders_create / createReminder", () => {

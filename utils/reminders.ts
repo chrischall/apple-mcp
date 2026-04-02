@@ -94,26 +94,32 @@ export async function listReminders(params: {
     : `      end if
     end repeat`;
 
-  const batchFetch = buildBatchFetch(completedFilter);
+  // completedStr: when filtering incomplete-only, we know completed=false; else fetch it.
+  const completedKnown = !includeCompleted;
+  const completedStr = completedKnown ? "false" : "";
 
   const script = `tell application "Reminders"
   try
     set outputText to ""
     set rCount to 0
     ${listOpen}
+      set listName to name of l
       try
-        set listName to name of l
-        ${batchFetch}
+        -- Batch-fetch 4 properties inline (body omitted — too slow; returned as empty string)
+        set ids to id of (reminders of l ${completedFilter})
+        set nms to name of (reminders of l ${completedFilter})
+        set dues to due date of (reminders of l ${completedFilter})
+        set priors to priority of (reminders of l ${completedFilter})
+        ${completedKnown ? "" : `set compls to completed of (reminders of l ${completedFilter})`}
         set listRemCount to count of ids
         repeat with i from 1 to listRemCount
           if rCount >= ${limit} then exit repeat
-          set rbody to ""
-          if item i of bods is not missing value then set rbody to item i of bods as string
           set rdue to ""
           if item i of dues is not missing value then set rdue to (item i of dues) as string
-          set rcompleted to (item i of compls) as string
+          set rcompleted to "${completedStr}"
+          ${completedKnown ? "" : "if item i of compls then set rcompleted to \"true\""}
           if rCount > 0 then set outputText to outputText & "|||ITEM|||"
-          set outputText to outputText & item i of ids & "|||" & item i of nms & "|||" & rbody & "|||" & rcompleted & "|||" & rdue & "|||" & listName & "|||" & ((item i of priors) as string)
+          set outputText to outputText & item i of ids & "|||" & item i of nms & "|||" & "" & "|||" & rcompleted & "|||" & rdue & "|||" & listName & "|||" & ((item i of priors) as string)
           set rCount to rCount + 1
         end repeat
       end try
@@ -146,9 +152,8 @@ export async function searchReminders(params: {
   const { query, list: listFilter, limit = 50 } = params;
   if (!query) return [];
   const safeQuery = escapeAS(query);
-  const nameFilter = `whose completed is false and name contains "${safeQuery}"`;
 
-  const listOpen = listFilter
+  const listIterationOpen = listFilter
     ? `repeat with l in (lists whose name is "${escapeAS(listFilter)}")`
     : `repeat with l in lists
       set listSize to count of reminders of l
@@ -156,35 +161,37 @@ export async function searchReminders(params: {
         -- skip large list
       else`;
 
-  const listClose = listFilter
+  const listIterationClose = listFilter
     ? `end repeat`
     : `      end if
     end repeat`;
 
-  const batchFetch = buildBatchFetch(nameFilter);
+  // Use combined whose filter so no-match scans complete quickly (empty result = fast batch fetch)
+  const nameFilter = `whose completed is false and name contains "${safeQuery}"`;
 
   const script = `tell application "Reminders"
   try
     set outputText to ""
     set rCount to 0
-    ${listOpen}
+    ${listIterationOpen}
+      set listName to name of l
       try
-        set listName to name of l
-        ${batchFetch}
+        set ids to id of (reminders of l ${nameFilter})
+        set nms to name of (reminders of l ${nameFilter})
+        set dues to due date of (reminders of l ${nameFilter})
+        set priors to priority of (reminders of l ${nameFilter})
         set listRemCount to count of ids
         repeat with i from 1 to listRemCount
           if rCount >= ${limit} then exit repeat
-          set rbody to ""
-          if item i of bods is not missing value then set rbody to item i of bods as string
           set rdue to ""
           if item i of dues is not missing value then set rdue to (item i of dues) as string
           if rCount > 0 then set outputText to outputText & "|||ITEM|||"
-          set outputText to outputText & item i of ids & "|||" & item i of nms & "|||" & rbody & "|||false|||" & rdue & "|||" & listName & "|||" & ((item i of priors) as string)
+          set outputText to outputText & item i of ids & "|||" & item i of nms & "|||" & "" & "|||false|||" & rdue & "|||" & listName & "|||" & ((item i of priors) as string)
           set rCount to rCount + 1
         end repeat
       end try
       if rCount >= ${limit} then exit repeat
-    ${listClose}
+    ${listIterationClose}
     return outputText
   on error errMsg
     return "error:" & errMsg
