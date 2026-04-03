@@ -1,0 +1,27 @@
+# Source — dist/ is all that's needed at runtime
+utils/
+tests/
+
+# Dev tooling
+node_modules/
+coverage/
+tsconfig.json
+*.skill
+
+# Plugin/marketplace files (not needed in the bundle)
+.claude-plugin/
+skills/
+plugin.json
+.mcp.json
+
+# GitHub/CI
+.github/
+
+# Local config
+.claude/
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
