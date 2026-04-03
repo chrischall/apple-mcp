@@ -183,7 +183,7 @@ function initServer() {
 	server = new Server(
 		{
 			name: "Apple MCP tools",
-			version: "2.0.1",
+			version: "2.0.2",
 		},
 		{
 			capabilities: {
