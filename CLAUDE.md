@@ -1,42 +1,49 @@
-# apple-mcp Development Guidelines
+# apple-mcp
 
-## Commands
-- `bun run dev` - Start the development server
-- No specific test or lint commands defined in package.json
+MCP server for Apple apps (Contacts, Notes, Messages, Mail, Reminders, Calendar, Maps) via AppleScript/JXA.
 
-## Code Style
+## Build & Test
 
-### TypeScript Configuration
-- Target: ESNext
-- Module: ESNext
-- Strict mode enabled
-- Bundler module resolution
+```bash
+bun run build         # bun build → dist/index.js
+bun run bundle        # bun build → dist/bundle.js (for mcpb)
+bun test tests/unit/  # unit tests
+```
 
-### Formatting & Structure
-- Use 2-space indentation (based on existing code)
-- Keep lines under 100 characters
-- Use explicit type annotations for function parameters and returns
+## Architecture
 
-### Naming Conventions
-- PascalCase for types, interfaces and Tool constants (e.g., `CONTACTS_TOOL`)
-- camelCase for variables and functions
-- Use descriptive names that reflect purpose
+- `index.ts` — MCP server entry point, tool routing
+- `tools.ts` — tool definitions (MCP schemas)
+- `utils/` — one file per Apple app domain (mail.ts, calendar.ts, notes.ts, etc.)
+- `tests/unit/` — unit tests
+- `tests/integration/` — integration tests (require macOS + app access)
 
-### Imports
-- Use ESM import syntax with `.js` extensions
-- Organize imports: external packages first, then internal modules
+## Versioning
 
-### Error Handling
-- Use try/catch blocks around applescript execution and external operations
-- Return both success status and detailed error messages
-- Check for required parameters before operations
+Version appears in FOUR places — all must match:
 
-### Type Safety
-- Define strong types for all function parameters 
-- Use type guard functions for validating incoming arguments
-- Provide detailed TypeScript interfaces for complex objects
+1. `package.json` → `"version"`
+2. `bun.lockb` → run `bun install` after changing package.json
+3. `index.ts` → `Server` constructor `version` field
+4. `manifest.json` → `"version"`
 
-### MCP Tool Structure
-- Follow established pattern for creating tool definitions
-- Include detailed descriptions and proper input schema
-- Organize related functionality into separate utility modules
+### Important
+
+Do NOT manually bump versions or create tags unless the user explicitly asks. Versioning is handled by the **Cut & Bump** GitHub Action.
+
+### Release workflow
+
+Main is always one version ahead of the latest tag. To release, run the **Cut & Bump** GitHub Action (`cut-and-bump.yml`) which:
+
+1. Runs CI (build + test)
+2. Tags the current commit with the current version
+3. Bumps patch in all four files
+4. Rebuilds, commits, and pushes main + tag
+5. The tag push triggers the **Release** workflow (CI + npm publish + GitHub release)
+
+## Gotchas
+
+- Uses **bun** for builds and tests, not npm/node
+- Main entry point is `index.ts` at the root, not in `src/`
+- AppleScript/JXA utilities only work on macOS — CI runs unit tests only
+- Uses tabs for indentation (not spaces)

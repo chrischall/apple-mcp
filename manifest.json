@@ -2,7 +2,7 @@
 	"dxt_version": "0.1",
 	"name": "apple-mcp",
 	"display_name": "Apple MCP",
-	"version": "1.0.0",
+	"version": "2.0.0",
 	"description": "Apple MCP tools for contacts, notes, messages, mail, reminders, calendar, and maps integration",
 	"long_description": "Apple MCP gives LLMs access to Apple's native apps including Contacts, Notes, Messages, Mail, Reminders, Calendar, and Maps. This integration allows LLMs to interact with these apps seamlessly, enabling comprehensive automation of daily tasks like managing contacts, creating notes, sending messages, handling emails, setting reminders, managing calendar events, and navigating with Maps.",
 	"author": {
