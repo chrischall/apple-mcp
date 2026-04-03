@@ -1,6 +1,7 @@
 {
 	"name": "apple-mcp",
 	"version": "2.0.2",
+	"private": true,
 	"module": "index.ts",
 	"type": "module",
 	"description": "Apple MCP tools for contacts, notes, messages, and mail integration",

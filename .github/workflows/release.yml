@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -29,9 +27,6 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-
-      - run: sed -i '/always-auth/d' "$NPM_CONFIG_USERCONFIG"
 
       - run: bun install --frozen-lockfile
 
@@ -69,9 +64,6 @@ jobs:
           "
           npx @anthropic-ai/mcpb pack
           mv apple-mcp.mcpb "apple-mcp-${VERSION}.mcpb"
-
-      - name: Publish to npm
-        run: npm publish --access public --provenance
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
