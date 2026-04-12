@@ -27,10 +27,11 @@
 		"dev": "bun run index.ts",
 		"build": "bun build index.ts --outfile=dist/index.js --target=node --minify",
 		"bundle": "bun build index.ts --outfile=dist/bundle.js --target=node",
+		"pack": "mcpb pack",
 		"start": "node dist/index.js",
-		"prepublishOnly": "bun run build",
-		"test": "bun run test-runner.ts all",
-		"test:watch": "bun test tests/**/*.test.ts --preload ./tests/setup.ts --watch",
+		"test": "bun test tests/unit/",
+		"test:integration": "bun test tests/integration/ --preload ./tests/setup.ts",
+		"test:watch": "bun test tests/unit/ --watch",
 		"test:contacts": "bun run test-runner.ts contacts",
 		"test:contacts-full": "bun test tests/integration/contacts.test.ts --preload ./tests/setup.ts",
 		"test:messages": "bun test tests/integration/messages.test.ts --preload ./tests/setup.ts",
@@ -43,6 +44,7 @@
 		"test:mcp": "bun test tests/mcp/handlers.test.ts --preload ./tests/setup.ts"
 	},
 	"devDependencies": {
+		"@anthropic-ai/mcpb": "^2.1.2",
 		"@types/bun": "latest",
 		"@types/node": "^25.5.2"
 	},

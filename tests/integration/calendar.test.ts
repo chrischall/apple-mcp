@@ -161,6 +161,149 @@ describe("Calendar Integration Tests", () => {
     }, 15000);
   });
 
+  describe("updateEvent", () => {
+    it("should update event title", async () => {
+      // First create an event to update
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(14, 0, 0, 0);
+
+      const eventEndTime = new Date(tomorrow);
+      eventEndTime.setHours(15, 0, 0, 0);
+
+      const originalTitle = `${TEST_DATA.CALENDAR.testEvent.title} Update Title ${Date.now()}`;
+
+      const createResult = await calendarModule.createEvent(
+        originalTitle,
+        tomorrow.toISOString(),
+        eventEndTime.toISOString(),
+        TEST_DATA.CALENDAR.testEvent.location,
+        TEST_DATA.CALENDAR.testEvent.notes
+      );
+
+      expect(createResult.success).toBe(true);
+      expect(createResult.eventId).toBeTruthy();
+      console.log(`Created event for title update: "${originalTitle}" (ID: ${createResult.eventId})`);
+
+      await sleep(2000);
+
+      const updatedTitle = `Updated Title ${Date.now()}`;
+      const updateResult = await calendarModule.updateEvent(createResult.eventId!, {
+        title: updatedTitle,
+      });
+
+      expect(updateResult.success).toBe(true);
+      expect(typeof updateResult.message).toBe("string");
+      console.log(`✅ Updated event title to: "${updatedTitle}"`);
+      console.log(`  Message: ${updateResult.message}`);
+    }, 25000);
+
+    it("should update event location and notes", async () => {
+      // Create an event to update
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(16, 0, 0, 0);
+
+      const eventEndTime = new Date(tomorrow);
+      eventEndTime.setHours(17, 0, 0, 0);
+
+      const testTitle = `${TEST_DATA.CALENDAR.testEvent.title} Update Fields ${Date.now()}`;
+
+      const createResult = await calendarModule.createEvent(
+        testTitle,
+        tomorrow.toISOString(),
+        eventEndTime.toISOString(),
+        TEST_DATA.CALENDAR.testEvent.location,
+        TEST_DATA.CALENDAR.testEvent.notes
+      );
+
+      expect(createResult.success).toBe(true);
+      expect(createResult.eventId).toBeTruthy();
+      console.log(`Created event for multi-field update: "${testTitle}" (ID: ${createResult.eventId})`);
+
+      await sleep(2000);
+
+      const updateResult = await calendarModule.updateEvent(createResult.eventId!, {
+        location: "Updated Location 123",
+        notes: "Updated notes for testing",
+      });
+
+      expect(updateResult.success).toBe(true);
+      expect(typeof updateResult.message).toBe("string");
+      console.log(`✅ Updated event location and notes`);
+      console.log(`  Message: ${updateResult.message}`);
+    }, 25000);
+
+    it("should update event dates", async () => {
+      // Create an event to update
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(10, 0, 0, 0);
+
+      const eventEndTime = new Date(tomorrow);
+      eventEndTime.setHours(11, 0, 0, 0);
+
+      const testTitle = `${TEST_DATA.CALENDAR.testEvent.title} Update Dates ${Date.now()}`;
+
+      const createResult = await calendarModule.createEvent(
+        testTitle,
+        tomorrow.toISOString(),
+        eventEndTime.toISOString(),
+        TEST_DATA.CALENDAR.testEvent.location,
+        TEST_DATA.CALENDAR.testEvent.notes
+      );
+
+      expect(createResult.success).toBe(true);
+      expect(createResult.eventId).toBeTruthy();
+      console.log(`Created event for date update: "${testTitle}" (ID: ${createResult.eventId})`);
+
+      await sleep(2000);
+
+      const newStart = new Date(tomorrow);
+      newStart.setHours(12, 0, 0, 0);
+      const newEnd = new Date(tomorrow);
+      newEnd.setHours(13, 0, 0, 0);
+
+      const updateResult = await calendarModule.updateEvent(createResult.eventId!, {
+        startDate: newStart.toISOString(),
+        endDate: newEnd.toISOString(),
+      });
+
+      expect(updateResult.success).toBe(true);
+      expect(typeof updateResult.message).toBe("string");
+      console.log(`✅ Updated event dates to ${newStart.toLocaleString()} - ${newEnd.toLocaleString()}`);
+      console.log(`  Message: ${updateResult.message}`);
+    }, 25000);
+
+    it("should handle updating non-existent event", async () => {
+      const result = await calendarModule.updateEvent("non-existent-event-id-99999", {
+        title: "This should fail",
+      });
+
+      expect(result.success).toBe(false);
+      expect(typeof result.message).toBe("string");
+      console.log(`✅ Handled non-existent event correctly: ${result.message}`);
+    }, 15000);
+
+    it("should handle empty fields object", async () => {
+      const result = await calendarModule.updateEvent("some-event-id", {});
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("at least one field");
+      console.log(`✅ Handled empty fields correctly: ${result.message}`);
+    }, 10000);
+
+    it("should handle empty event ID", async () => {
+      const result = await calendarModule.updateEvent("", {
+        title: "This should fail",
+      });
+
+      expect(result.success).toBe(false);
+      expect(typeof result.message).toBe("string");
+      console.log(`✅ Handled empty event ID correctly: ${result.message}`);
+    }, 10000);
+  });
+
   describe("searchEvents", () => {
     it("should search for events by title", async () => {
       // First create a searchable event

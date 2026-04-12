@@ -59,7 +59,7 @@ jobs:
             m.version = '$VERSION';
             fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
           "
-          npx @anthropic-ai/mcpb pack
+          bun run pack
           mv apple-mcp.mcpb "apple-mcp-${VERSION}.mcpb"
 
       - name: Create GitHub Release

@@ -864,9 +864,9 @@ end tell`;
 
 	// --- calendar ---
 	server.registerTool("calendar", {
-		description: "Search, create, and open calendar events in Apple Calendar app",
+		description: "Search, create, update, and open calendar events in Apple Calendar app",
 		inputSchema: {
-			operation: z.enum(["search", "open", "list", "create"]).describe("Operation to perform: 'search', 'open', 'list', or 'create'"),
+			operation: z.enum(["search", "open", "list", "create", "update"]).describe("Operation to perform: 'search', 'open', 'list', 'create', or 'update'"),
 			searchText: z.string().optional().describe("Text to search for in event titles, locations, and notes (required for search operation)"),
 			eventId: z.string().optional().describe("ID of the event to open (required for open operation)"),
 			limit: z.number().optional().describe("Number of events to retrieve (optional, default 10)"),
@@ -973,6 +973,24 @@ end tell`;
 								text: result.success
 									? `${result.message} Event scheduled from ${new Date(startDate!).toLocaleString()} to ${new Date(endDate!).toLocaleString()}${result.eventId ? `\nEvent ID: ${result.eventId}` : ""}`
 									: `Error creating event: ${result.message}`,
+							},
+						],
+						isError: !result.success,
+					};
+				}
+
+				case "update": {
+					const { eventId, title, startDate, endDate, location, notes, isAllDay, calendarName } = args;
+					const result = await calendarModule.updateEvent(eventId!, {
+						title, startDate, endDate, location, notes, isAllDay, calendarName,
+					});
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: result.success
+									? result.message
+									: `Error updating event: ${result.message}`,
 							},
 						],
 						isError: !result.success,

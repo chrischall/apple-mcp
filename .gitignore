@@ -107,6 +107,11 @@ web_modules/
 
 *.tgz
 
+# mcpb output
+
+*.mcpb
+*.dxt
+
 # Yarn Integrity file
 
 .yarn-integrity
@@ -133,6 +138,7 @@ out
 .nuxt
 dist
 !dist/index.js
+!dist/bundle.js
 
 # Gatsby files
 

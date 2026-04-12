@@ -354,11 +354,147 @@ end tell`;
     }
 }
 
+/**
+ * Update an existing calendar event
+ * @param eventId UID of the event to update
+ * @param fields Fields to update (only provided fields are changed)
+ */
+async function updateEvent(
+    eventId: string,
+    fields: {
+        title?: string;
+        startDate?: string;
+        endDate?: string;
+        location?: string;
+        notes?: string;
+        isAllDay?: boolean;
+        calendarName?: string;
+    }
+): Promise<{ success: boolean; message: string }> {
+    try {
+        if (!eventId || !eventId.trim()) {
+            return {
+                success: false,
+                message: "Event ID is required"
+            };
+        }
+
+        const hasFields = Object.values(fields).some(v => v !== undefined);
+        if (!hasFields) {
+            return {
+                success: false,
+                message: "Please provide at least one field to update"
+            };
+        }
+
+        // Validate dates if provided
+        if (fields.startDate) {
+            const start = new Date(fields.startDate);
+            if (isNaN(start.getTime())) {
+                return {
+                    success: false,
+                    message: "Invalid start date format. Please use ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)"
+                };
+            }
+        }
+
+        if (fields.endDate) {
+            const end = new Date(fields.endDate);
+            if (isNaN(end.getTime())) {
+                return {
+                    success: false,
+                    message: "Invalid end date format. Please use ISO format (YYYY-MM-DDTHH:mm:ss.sssZ)"
+                };
+            }
+        }
+
+        if (fields.startDate && fields.endDate) {
+            const start = new Date(fields.startDate);
+            const end = new Date(fields.endDate);
+            if (end <= start) {
+                return {
+                    success: false,
+                    message: "End date must be after start date"
+                };
+            }
+        }
+
+        const accessResult = await requestCalendarAccess();
+        if (!accessResult.hasAccess) {
+            return {
+                success: false,
+                message: accessResult.message
+            };
+        }
+
+        console.error(`updateEvent - Attempting to update event: "${eventId}"`);
+
+        // Build property assignments for only the provided fields
+        const propertyLines: string[] = [];
+        if (fields.title !== undefined) {
+            propertyLines.push(`set summary of targetEvent to "${fields.title.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.location !== undefined) {
+            propertyLines.push(`set location of targetEvent to "${fields.location.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.notes !== undefined) {
+            propertyLines.push(`set description of targetEvent to "${fields.notes.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.startDate !== undefined) {
+            const start = new Date(fields.startDate);
+            propertyLines.push(`set start date of targetEvent to date "${start.toLocaleString()}"`);
+        }
+        if (fields.endDate !== undefined) {
+            const end = new Date(fields.endDate);
+            propertyLines.push(`set end date of targetEvent to date "${end.toLocaleString()}"`);
+        }
+        if (fields.isAllDay !== undefined) {
+            propertyLines.push(`set allday event of targetEvent to ${fields.isAllDay}`);
+        }
+
+        const script = `
+tell application "Calendar"
+    set targetEvent to missing value
+
+    repeat with cal in calendars
+        try
+            set theEvents to (every event of cal whose uid is "${eventId}")
+            if (count of theEvents) > 0 then
+                set targetEvent to item 1 of theEvents
+                exit repeat
+            end if
+        end try
+    end repeat
+
+    if targetEvent is missing value then
+        error "Event not found with ID: ${eventId}"
+    end if
+
+    ${propertyLines.join("\n    ")}
+
+    return "updated"
+end tell`;
+
+        await runAppleScript(script);
+
+        return {
+            success: true,
+            message: `Event "${eventId}" updated successfully.`
+        };
+    } catch (error) {
+        return {
+            success: false,
+            message: `Error updating event: ${error instanceof Error ? error.message : String(error)}`
+        };
+    }
+}
+
 const calendar = {
     searchEvents,
     openEvent,
     getEvents,
     createEvent,
+    updateEvent,
     requestCalendarAccess
 };
 

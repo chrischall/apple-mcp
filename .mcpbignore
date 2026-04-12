@@ -2,6 +2,10 @@
 utils/
 tests/
 
+# Build artifacts
+*.mcpb
+*.dxt
+
 # Dev tooling
 node_modules/
 coverage/
