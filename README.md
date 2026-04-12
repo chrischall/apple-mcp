@@ -154,6 +154,21 @@ bun install
 bun run index.ts
 ```
 
+### Building
+
+```bash
+bun run build    # build dist/index.js (minified)
+bun run bundle   # build dist/bundle.js (unminified, used by mcpb)
+bun run pack     # package .mcpb bundle via mcpb
+```
+
+### Testing
+
+```bash
+bun test              # run unit tests (default)
+bun run test:integration  # run integration tests (requires macOS + app access)
+```
+
 Now go forth and automate your digital life! 🚀
 
 ---
