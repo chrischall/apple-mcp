@@ -5,9 +5,6 @@ on:
     tags:
       - 'v*'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
@@ -18,13 +15,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/setup-node@v6.3.0
         with:
           node-version: 24
 
@@ -66,7 +63,7 @@ jobs:
           mv apple-mcp.mcpb "apple-mcp-${VERSION}.mcpb"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.0
         with:
           files: |
             apple-mcp-${{ env.VERSION }}.skill

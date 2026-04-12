@@ -55,6 +55,7 @@
 		"@jxa/run": "^1.4.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@types/express": "^5.0.6",
+		"esbuild": "^0.28.0",
 		"mcp-proxy": "^6.4.4",
 		"run-applescript": "^7.1.0",
 		"zod": "^4.3.6"
