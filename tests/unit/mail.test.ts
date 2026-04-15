@@ -268,6 +268,33 @@ describe("mail.searchMails", () => {
 		expect(callArgs.account).toBe("Google");
 		expect(callArgs.mailbox).toBe("INBOX");
 	});
+
+	it("should default to a 90-day lookback window", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
+
+		const before = Date.now();
+		await mailModule.searchMails("invoice");
+		const after = Date.now();
+
+		const callArgs = mockJxaRun.mock.calls[0][1] as { sinceEpochSeconds: number };
+		expect(typeof callArgs.sinceEpochSeconds).toBe("number");
+		const expectedMin = Math.floor((before - 91 * 24 * 3600 * 1000) / 1000);
+		const expectedMax = Math.floor((after - 89 * 24 * 3600 * 1000) / 1000);
+		expect(callArgs.sinceEpochSeconds).toBeGreaterThanOrEqual(expectedMin);
+		expect(callArgs.sinceEpochSeconds).toBeLessThanOrEqual(expectedMax);
+	});
+
+	it("should honor an explicit sinceDate parameter", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
+
+		await mailModule.searchMails("invoice", 5, undefined, undefined, "2026-01-01");
+
+		const callArgs = mockJxaRun.mock.calls[0][1] as { sinceEpochSeconds: number };
+		const expected = Math.floor(new Date("2026-01-01").getTime() / 1000);
+		expect(callArgs.sinceEpochSeconds).toBe(expected);
+	});
 });
 
 // ─── sendMail ──────────────────────────────────────────────────────────────

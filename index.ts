@@ -478,6 +478,7 @@ function initServer() {
 			body: z.string().optional().describe("Email body content (required for send operation)"),
 			cc: z.string().optional().describe("CC email address (optional for send operation)"),
 			bcc: z.string().optional().describe("BCC email address (optional for send operation)"),
+			sinceDate: z.string().optional().describe("For 'search' only: ISO date (YYYY-MM-DD) to bound the search window. Defaults to 90 days ago. A shorter window (e.g. 30 days) is much faster on large mailboxes; extend it if you're looking for older mail."),
 		},
 	}, async (args) => {
 		try {
@@ -632,7 +633,7 @@ end tell`;
 					if (!args.searchTerm) {
 						throw new Error("Search term is required for search operation");
 					}
-					const emails = await mailModule.searchMails(args.searchTerm, args.limit, args.account, args.mailbox);
+					const emails = await mailModule.searchMails(args.searchTerm, args.limit, args.account, args.mailbox, args.sinceDate);
 					return {
 						content: [
 							{
@@ -864,7 +865,7 @@ end tell`;
 
 	// --- calendar ---
 	server.registerTool("calendar", {
-		description: "Search, create, update, and open calendar events in Apple Calendar app",
+		description: "Search, create, update, and open calendar events in Apple Calendar app. PERFORMANCE: pass `calendarName` for 'list'/'search' to scope to a single calendar (~8s). Without it, the query fans out across every calendar and Calendar.app serializes AppleScript requests internally, so wall time is ~60-90s. Use 'list' with no `calendarName` sparingly; prefer naming the calendar you care about.",
 		inputSchema: {
 			operation: z.enum(["search", "open", "list", "create", "update"]).describe("Operation to perform: 'search', 'open', 'list', 'create', or 'update'"),
 			searchText: z.string().optional().describe("Text to search for in event titles, locations, and notes (required for search operation)"),
