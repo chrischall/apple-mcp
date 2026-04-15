@@ -469,8 +469,8 @@ function initServer() {
 		description: "Interact with Apple Mail app - read unread emails, search emails, and send emails",
 		inputSchema: {
 			operation: z.enum(["unread", "search", "send", "mailboxes", "accounts", "latest"]).describe("Operation to perform: 'unread', 'search', 'send', 'mailboxes', 'accounts', or 'latest'"),
-			account: z.string().optional().describe("Email account to use (optional - if not provided, searches across all accounts)"),
-			mailbox: z.string().optional().describe("Mailbox to use (optional - if not provided, uses inbox or searches across all mailboxes)"),
+			account: z.string().optional().describe("Email account to scope to (e.g. 'iCloud', 'Google'). Strongly recommended for 'search' on accounts with many labels — without it, search iterates every mailbox in every account and can take minutes. Use 'accounts' operation to discover account names."),
+			mailbox: z.string().optional().describe("Mailbox name to scope to (e.g. 'INBOX'). Use with `account` for fast, targeted lookups. Use 'mailboxes' operation with `account` to discover mailbox names."),
 			limit: z.number().optional().describe("Number of emails to retrieve (optional, for unread, search, and latest operations)"),
 			searchTerm: z.string().optional().describe("Text to search for in emails (required for search operation)"),
 			to: z.string().optional().describe("Recipient email address (required for send operation)"),
@@ -632,7 +632,7 @@ end tell`;
 					if (!args.searchTerm) {
 						throw new Error("Search term is required for search operation");
 					}
-					const emails = await mailModule.searchMails(args.searchTerm, args.limit);
+					const emails = await mailModule.searchMails(args.searchTerm, args.limit, args.account, args.mailbox);
 					return {
 						content: [
 							{
@@ -878,7 +878,7 @@ end tell`;
 			location: z.string().optional().describe("Location of the event (optional for create operation)"),
 			notes: z.string().optional().describe("Additional notes for the event (optional for create operation)"),
 			isAllDay: z.boolean().optional().describe("Whether the event is an all-day event (optional for create operation, default is false)"),
-			calendarName: z.string().optional().describe("Name of the calendar to create the event in (optional for create operation, uses default calendar if not specified)"),
+			calendarName: z.string().optional().describe("Calendar name to scope the operation to. For 'list'/'search', restricts to a single calendar (much faster than querying all). Pass 'all' to fan out across every calendar in parallel. For 'create', selects which calendar to add the event to."),
 		},
 	}, async (args) => {
 		try {
@@ -887,8 +887,8 @@ end tell`;
 
 			switch (operation) {
 				case "search": {
-					const { searchText, limit, fromDate, toDate } = args;
-					const events = await calendarModule.searchEvents(searchText!, limit, fromDate, toDate);
+					const { searchText, limit, fromDate, toDate, calendarName } = args;
+					const events = await calendarModule.searchEvents(searchText!, limit, fromDate, toDate, calendarName);
 
 					return {
 						content: [
@@ -930,8 +930,8 @@ end tell`;
 				}
 
 				case "list": {
-					const { limit, fromDate, toDate } = args;
-					const events = await calendarModule.getEvents(limit, fromDate, toDate);
+					const { limit, fromDate, toDate, calendarName } = args;
+					const events = await calendarModule.getEvents(limit, fromDate, toDate, calendarName);
 
 					const startDateText = fromDate
 						? new Date(fromDate).toLocaleDateString()

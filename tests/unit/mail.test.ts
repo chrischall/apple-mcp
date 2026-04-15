@@ -6,6 +6,16 @@ mock.module("run-applescript", () => ({
 	runAppleScript: mockRunAppleScript,
 }));
 
+// Mock @jxa/run for the data-fetch path. Each test queues responses with
+// mockJxaRun.mockResolvedValueOnce(...) for each `run()` call the function
+// makes. In production the `run()` callback executes inside osascript; in
+// tests the callback never runs — we just resolve with whatever the
+// callback would have returned.
+const mockJxaRun = mock(() => Promise.resolve(undefined as unknown));
+mock.module("@jxa/run", () => ({
+	run: mockJxaRun,
+}));
+
 // Import after mocking
 const mailModule = (await import("../../utils/mail.js")).default;
 
@@ -50,52 +60,60 @@ describe("mail.requestMailAccess", () => {
 describe("mail.getUnreadMails", () => {
 	beforeEach(() => {
 		mockRunAppleScript.mockReset();
+		mockJxaRun.mockReset();
 	});
 
-	it("should return empty array on SUCCESS: response", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail") // access check
-			.mockResolvedValueOnce("SUCCESS:5"); // getUnreadMails script
+	it("should return parsed unread emails from JXA result", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail"); // access check
+		mockJxaRun.mockResolvedValueOnce([
+			{
+				subject: "Hello",
+				sender: "alice@example.com",
+				dateSent: "2026-04-15T10:00:00.000Z",
+				content: "Body of message",
+				mailbox: "INBOX",
+				account: "iCloud",
+			},
+		]);
 
 		const result = await mailModule.getUnreadMails();
 
-		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(0);
-		expect(mockRunAppleScript).toHaveBeenCalledTimes(2);
+		expect(result).toHaveLength(1);
+		expect(result[0].subject).toBe("Hello");
+		expect(result[0].sender).toBe("alice@example.com");
+		expect(result[0].isRead).toBe(false);
+		expect(result[0].mailbox).toBe("iCloud — INBOX");
 	});
 
-	it("should return empty array on non-SUCCESS response", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("something unexpected");
+	it("should pass the requested limit through to the JXA call", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
 
-		const result = await mailModule.getUnreadMails();
+		await mailModule.getUnreadMails(7);
 
-		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(0);
-	});
-
-	it("should respect limit parameter in AppleScript", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:3");
-
-		await mailModule.getUnreadMails(3);
-
-		const script = mockRunAppleScript.mock.calls[1][0] as string;
-		expect(script).toContain("3");
+		// Args object passed to run() is the second argument
+		const callArgs = mockJxaRun.mock.calls[0][1] as { limit: number };
+		expect(callArgs.limit).toBe(7);
 	});
 
 	it("should cap limit at MAX_EMAILS (20)", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:20");
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
 
 		await mailModule.getUnreadMails(100);
 
-		const script = mockRunAppleScript.mock.calls[1][0] as string;
-		// The script should contain 20, not 100
-		expect(script).toContain("20");
+		const callArgs = mockJxaRun.mock.calls[0][1] as { limit: number };
+		expect(callArgs.limit).toBe(20);
+	});
+
+	it("should default to limit of 10", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
+
+		await mailModule.getUnreadMails();
+
+		const callArgs = mockJxaRun.mock.calls[0][1] as { limit: number };
+		expect(callArgs.limit).toBe(10);
 	});
 
 	it("should return empty array when access is denied", async () => {
@@ -105,12 +123,13 @@ describe("mail.getUnreadMails", () => {
 
 		expect(Array.isArray(result)).toBe(true);
 		expect(result).toHaveLength(0);
+		// JXA should never be called when access fails
+		expect(mockJxaRun).not.toHaveBeenCalled();
 	});
 
-	it("should return empty array when AppleScript throws", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockRejectedValueOnce(new Error("script error"));
+	it("should return empty array when JXA throws", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockRejectedValueOnce(new Error("script error"));
 
 		const result = await mailModule.getUnreadMails();
 
@@ -118,15 +137,26 @@ describe("mail.getUnreadMails", () => {
 		expect(result).toHaveLength(0);
 	});
 
-	it("should use default limit of 10", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:0");
+	it("should return empty array when JXA returns non-array", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce("unexpected" as unknown);
 
-		await mailModule.getUnreadMails();
+		const result = await mailModule.getUnreadMails();
 
-		const script = mockRunAppleScript.mock.calls[1][0] as string;
-		expect(script).toContain("10");
+		expect(Array.isArray(result)).toBe(true);
+		expect(result).toHaveLength(0);
+	});
+
+	it("should fill defaults for missing fields", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([{ subject: "Only Subject" }]);
+
+		const result = await mailModule.getUnreadMails();
+
+		expect(result).toHaveLength(1);
+		expect(result[0].subject).toBe("Only Subject");
+		expect(result[0].sender).toBe("Unknown sender");
+		expect(result[0].content).toBe("[Content not available]");
 	});
 });
 
@@ -135,15 +165,16 @@ describe("mail.getUnreadMails", () => {
 describe("mail.searchMails", () => {
 	beforeEach(() => {
 		mockRunAppleScript.mockReset();
+		mockJxaRun.mockReset();
 	});
 
-	it("should return empty array for empty search term", async () => {
+	it("should return empty array for empty search term without calling JXA", async () => {
 		mockRunAppleScript.mockResolvedValueOnce("Mail"); // access check
 
 		const result = await mailModule.searchMails("");
 
-		expect(Array.isArray(result)).toBe(true);
 		expect(result).toHaveLength(0);
+		expect(mockJxaRun).not.toHaveBeenCalled();
 	});
 
 	it("should return empty array for whitespace-only search term", async () => {
@@ -151,53 +182,52 @@ describe("mail.searchMails", () => {
 
 		const result = await mailModule.searchMails("   ");
 
-		expect(Array.isArray(result)).toBe(true);
 		expect(result).toHaveLength(0);
+		expect(mockJxaRun).not.toHaveBeenCalled();
 	});
 
-	it("should return empty array on SUCCESS: response", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:3");
+	it("should return parsed search results from JXA", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([
+			{
+				subject: "Invoice #123",
+				sender: "billing@example.com",
+				dateSent: "2026-04-10T08:00:00.000Z",
+				content: "Your invoice is ready",
+				isRead: true,
+				mailbox: "INBOX",
+				account: "Google",
+			},
+		]);
 
-		const result = await mailModule.searchMails("test");
+		const result = await mailModule.searchMails("invoice");
 
-		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(0);
-		expect(mockRunAppleScript).toHaveBeenCalledTimes(2);
+		expect(result).toHaveLength(1);
+		expect(result[0].subject).toBe("Invoice #123");
+		expect(result[0].sender).toBe("billing@example.com");
+		expect(result[0].isRead).toBe(true);
+		expect(result[0].mailbox).toBe("Google — INBOX");
 	});
 
-	it("should return empty array on non-SUCCESS response", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("unexpected");
+	it("should pass search term and limit through to JXA", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
 
-		const result = await mailModule.searchMails("test");
+		await mailModule.searchMails("receipt", 5);
 
-		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(0);
+		const callArgs = mockJxaRun.mock.calls[0][1] as { searchTerm: string; limit: number };
+		expect(callArgs.searchTerm).toBe("receipt");
+		expect(callArgs.limit).toBe(5);
 	});
 
-	it("should respect limit capped at 20", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:0");
+	it("should cap limit at MAX_EMAILS (20)", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
 
 		await mailModule.searchMails("test", 50);
 
-		const script = mockRunAppleScript.mock.calls[1][0] as string;
-		expect(script).toContain("20");
-	});
-
-	it("should pass search term into the AppleScript", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockResolvedValueOnce("SUCCESS:0");
-
-		await mailModule.searchMails("invoice");
-
-		const script = mockRunAppleScript.mock.calls[1][0] as string;
-		expect(script).toContain("invoice");
+		const callArgs = mockJxaRun.mock.calls[0][1] as { limit: number };
+		expect(callArgs.limit).toBe(20);
 	});
 
 	it("should return empty array when access is denied", async () => {
@@ -205,19 +235,38 @@ describe("mail.searchMails", () => {
 
 		const result = await mailModule.searchMails("test");
 
-		expect(Array.isArray(result)).toBe(true);
 		expect(result).toHaveLength(0);
+		expect(mockJxaRun).not.toHaveBeenCalled();
 	});
 
-	it("should return empty array when AppleScript throws", async () => {
-		mockRunAppleScript
-			.mockResolvedValueOnce("Mail")
-			.mockRejectedValueOnce(new Error("script error"));
+	it("should return empty array when JXA throws", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockRejectedValueOnce(new Error("script error"));
 
 		const result = await mailModule.searchMails("test");
 
-		expect(Array.isArray(result)).toBe(true);
 		expect(result).toHaveLength(0);
+	});
+
+	it("should pass account scope through to JXA when given", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
+
+		await mailModule.searchMails("invoice", 5, "Google");
+
+		const callArgs = mockJxaRun.mock.calls[0][1] as { account?: string };
+		expect(callArgs.account).toBe("Google");
+	});
+
+	it("should pass mailbox scope through to JXA when given", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Mail");
+		mockJxaRun.mockResolvedValueOnce([]);
+
+		await mailModule.searchMails("invoice", 5, "Google", "INBOX");
+
+		const callArgs = mockJxaRun.mock.calls[0][1] as { account?: string; mailbox?: string };
+		expect(callArgs.account).toBe("Google");
+		expect(callArgs.mailbox).toBe("INBOX");
 	});
 });
 

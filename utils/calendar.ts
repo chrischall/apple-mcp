@@ -1,4 +1,5 @@
 import { runAppleScript } from 'run-applescript';
+import { run as jxaRun } from '@jxa/run';
 
 // Define types for our calendar events
 interface CalendarEvent {
@@ -11,6 +12,33 @@ interface CalendarEvent {
     calendarName: string;
     isAllDay: boolean;
     url: string | null;
+}
+
+// Raw shape returned by the JXA helpers below (before normalization).
+interface RawJxaCalEvent {
+    id?: string;
+    title?: string;
+    location?: string | null;
+    notes?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    calendarName?: string;
+    isAllDay?: boolean;
+    url?: string | null;
+}
+
+function normalizeJxaCalEvent(raw: RawJxaCalEvent): CalendarEvent {
+    return {
+        id: raw.id || `unknown-${Date.now()}`,
+        title: raw.title || 'Untitled Event',
+        location: raw.location || null,
+        notes: raw.notes || null,
+        startDate: raw.startDate ? new Date(raw.startDate).toISOString() : null,
+        endDate: raw.endDate ? new Date(raw.endDate).toISOString() : null,
+        calendarName: raw.calendarName || 'Unknown Calendar',
+        isAllDay: raw.isAllDay || false,
+        url: raw.url || null,
+    };
 }
 
 // Configuration for timeouts and limits
@@ -67,74 +95,154 @@ async function requestCalendarAccess(): Promise<{ hasAccess: boolean; message: s
 }
 
 /**
- * Get calendar events in a specified date range
- * @param limit Optional limit on the number of results (default 10)
- * @param fromDate Optional start date for search range in ISO format (default: today)
- * @param toDate Optional end date for search range in ISO format (default: 7 days from now)
+ * JXA helper: list every calendar's name. Fast (~700ms on a typical Mac).
+ */
+async function listCalendarNames(): Promise<string[]> {
+    const result = await jxaRun(() => {
+        const Calendar = Application('Calendar');
+        return Calendar.calendars().map((c: any) => c.name());
+    });
+    return Array.isArray(result) ? (result as string[]) : [];
+}
+
+/**
+ * JXA helper: query events from a single named calendar within a date range,
+ * optionally filtered by a substring match on summary/location/notes.
+ */
+async function queryCalendarEvents(args: {
+    calendarName: string;
+    startIso: string;
+    endIso: string;
+    limit: number;
+    searchText?: string;
+}): Promise<RawJxaCalEvent[]> {
+    const result = await jxaRun(
+        (a: { calendarName: string; startIso: string; endIso: string; limit: number; searchText?: string }) => {
+            const Calendar = Application('Calendar');
+            const start = new Date(a.startIso);
+            const end = new Date(a.endIso);
+            const matches = Calendar.calendars.whose({ name: a.calendarName })();
+            if (!matches.length) return [];
+            const cal = matches[0];
+            const calName = cal.name();
+            const events = cal.events.whose({
+                _and: [
+                    { startDate: { _greaterThan: start } },
+                    { endDate: { _lessThan: end } },
+                ],
+            })();
+            const out: RawJxaCalEvent[] = [];
+            const needle = a.searchText ? a.searchText.toLowerCase() : null;
+            for (let i = 0; i < events.length && out.length < a.limit; i++) {
+                try {
+                    let title = '';
+                    try { title = events[i].summary() || ''; } catch {}
+                    let location = '';
+                    try { location = events[i].location() || ''; } catch {}
+                    let notes = '';
+                    try { notes = events[i].description() || ''; } catch {}
+                    if (needle) {
+                        const hay = (title + '\n' + location + '\n' + notes).toLowerCase();
+                        if (hay.indexOf(needle) === -1) continue;
+                    }
+                    let id = '';
+                    try { id = events[i].uid(); } catch {}
+                    let startStr: string | null = null;
+                    try { startStr = events[i].startDate().toISOString(); } catch {}
+                    let endStr: string | null = null;
+                    try { endStr = events[i].endDate().toISOString(); } catch {}
+                    let allDay = false;
+                    try { allDay = events[i].alldayEvent(); } catch {}
+                    let url: string | null = null;
+                    try { url = events[i].url() || null; } catch {}
+                    out.push({
+                        id,
+                        title,
+                        location: location || null,
+                        notes: notes || null,
+                        startDate: startStr,
+                        endDate: endStr,
+                        calendarName: calName,
+                        isAllDay: allDay,
+                        url,
+                    });
+                } catch {
+                    // Skip individual events we can't read.
+                }
+            }
+            return out;
+        },
+        args,
+    );
+    return Array.isArray(result) ? (result as RawJxaCalEvent[]) : [];
+}
+
+/**
+ * Get calendar events in a date range.
+ *
+ * If calendarName is provided (and not "all"), queries only that calendar — fast.
+ * Otherwise fans out across every calendar in parallel; each per-calendar JXA
+ * call is independent, so a slow subscribed calendar can't block the whole
+ * result. Calendars whose query rejects (e.g. timed out at the os layer) are
+ * dropped from the output.
+ *
+ * @param limit Max total events across all calendars
+ * @param fromDate ISO date (default: today)
+ * @param toDate ISO date (default: 7 days from now)
+ * @param calendarName Optional calendar name to restrict the query to
  */
 async function getEvents(
-    limit = 10, 
-    fromDate?: string, 
-    toDate?: string
+    limit = 10,
+    fromDate?: string,
+    toDate?: string,
+    calendarName?: string,
 ): Promise<CalendarEvent[]> {
     try {
-        console.error("getEvents - Starting to fetch calendar events");
-        
         const accessResult = await requestCalendarAccess();
         if (!accessResult.hasAccess) {
             throw new Error(accessResult.message);
         }
-        console.error("getEvents - Calendar access check passed");
 
-        // Set default date range if not provided
         const today = new Date();
         const defaultEndDate = new Date();
         defaultEndDate.setDate(today.getDate() + 7);
-        
-        const startDate = fromDate ? fromDate : today.toISOString().split('T')[0];
-        const endDate = toDate ? toDate : defaultEndDate.toISOString().split('T')[0];
-        
-        const script = `
-tell application "Calendar"
-    set eventList to {}
-    set eventCount to 0
-    
-    -- Create a simple test event to return (since Calendar queries are too slow)
-    try
-        set testEvent to {}
-        set testEvent to testEvent & {id:"dummy-event-1"}
-        set testEvent to testEvent & {title:"No events available - Calendar operations too slow"}
-        set testEvent to testEvent & {calendarName:"System"}
-        set testEvent to testEvent & {startDate:"${startDate}"}
-        set testEvent to testEvent & {endDate:"${endDate}"}
-        set testEvent to testEvent & {isAllDay:false}
-        set testEvent to testEvent & {location:""}
-        set testEvent to testEvent & {notes:"Calendar.app AppleScript queries are notoriously slow and unreliable"}
-        set testEvent to testEvent & {url:""}
-        
-        set eventList to eventList & {testEvent}
-    end try
-    
-    return eventList
-end tell`;
+        const startIso = (fromDate ? new Date(fromDate) : today).toISOString();
+        const endIso = (toDate ? new Date(toDate) : defaultEndDate).toISOString();
+        const maxEvents = Math.min(limit, CONFIG.MAX_EVENTS);
 
-        const result = await runAppleScript(script) as any;
-        
-        // Convert AppleScript result to our format - handle both array and non-array results
-        const resultArray = Array.isArray(result) ? result : [];
-        const events: CalendarEvent[] = resultArray.map((eventData: any) => ({
-            id: eventData.id || `unknown-${Date.now()}`,
-            title: eventData.title || "Untitled Event",
-            location: eventData.location || null,
-            notes: eventData.notes || null,
-            startDate: eventData.startDate ? new Date(eventData.startDate).toISOString() : null,
-            endDate: eventData.endDate ? new Date(eventData.endDate).toISOString() : null,
-            calendarName: eventData.calendarName || "Unknown Calendar",
-            isAllDay: eventData.isAllDay || false,
-            url: eventData.url || null
-        }));
-        
-        return events;
+        // Single-calendar mode — fast path.
+        if (calendarName && calendarName.toLowerCase() !== 'all') {
+            const raw = await queryCalendarEvents({
+                calendarName,
+                startIso,
+                endIso,
+                limit: maxEvents,
+            });
+            return raw.map(normalizeJxaCalEvent);
+        }
+
+        // Fan-out mode: query every calendar in parallel.
+        const names = await listCalendarNames();
+        const results = await Promise.allSettled(
+            names.map((n) =>
+                queryCalendarEvents({
+                    calendarName: n,
+                    startIso,
+                    endIso,
+                    limit: maxEvents,
+                }),
+            ),
+        );
+        const collected: CalendarEvent[] = [];
+        for (const r of results) {
+            if (r.status !== 'fulfilled') continue;
+            for (const evt of r.value) {
+                collected.push(normalizeJxaCalEvent(evt));
+                if (collected.length >= maxEvents) break;
+            }
+            if (collected.length >= maxEvents) break;
+        }
+        return collected;
     } catch (error) {
         console.error(`Error getting events: ${error instanceof Error ? error.message : String(error)}`);
         return [];
@@ -142,17 +250,21 @@ end tell`;
 }
 
 /**
- * Search for calendar events that match the search text
- * @param searchText Text to search for in event titles
- * @param limit Optional limit on the number of results (default 10)
- * @param fromDate Optional start date for search range in ISO format (default: today)
- * @param toDate Optional end date for search range in ISO format (default: 30 days from now)
+ * Search for calendar events whose summary, location, or notes contain
+ * the given text (case-insensitive).
+ *
+ * @param searchText Substring to match
+ * @param limit Max total events across all calendars
+ * @param fromDate ISO date (default: today)
+ * @param toDate ISO date (default: 30 days from now)
+ * @param calendarName Optional calendar to restrict the search to
  */
 async function searchEvents(
-    searchText: string, 
-    limit = 10, 
-    fromDate?: string, 
-    toDate?: string
+    searchText: string,
+    limit = 10,
+    fromDate?: string,
+    toDate?: string,
+    calendarName?: string,
 ): Promise<CalendarEvent[]> {
     try {
         const accessResult = await requestCalendarAccess();
@@ -160,41 +272,48 @@ async function searchEvents(
             throw new Error(accessResult.message);
         }
 
-        console.error(`searchEvents - Processing calendars for search: "${searchText}"`);
-
-        // Set default date range if not provided
         const today = new Date();
         const defaultEndDate = new Date();
         defaultEndDate.setDate(today.getDate() + 30);
-        
-        const startDate = fromDate ? fromDate : today.toISOString().split('T')[0];
-        const endDate = toDate ? toDate : defaultEndDate.toISOString().split('T')[0];
-        
-        const script = `
-tell application "Calendar"
-    set eventList to {}
-    
-    -- Return empty list for search (Calendar queries are too slow)
-    return eventList
-end tell`;
+        const startIso = (fromDate ? new Date(fromDate) : today).toISOString();
+        const endIso = (toDate ? new Date(toDate) : defaultEndDate).toISOString();
+        const maxEvents = Math.min(limit, CONFIG.MAX_EVENTS);
 
-        const result = await runAppleScript(script) as any;
-        
-        // Convert AppleScript result to our format - handle both array and non-array results
-        const resultArray = Array.isArray(result) ? result : [];
-        const events: CalendarEvent[] = resultArray.map((eventData: any) => ({
-            id: eventData.id || `unknown-${Date.now()}`,
-            title: eventData.title || "Untitled Event",
-            location: eventData.location || null,
-            notes: eventData.notes || null,
-            startDate: eventData.startDate ? new Date(eventData.startDate).toISOString() : null,
-            endDate: eventData.endDate ? new Date(eventData.endDate).toISOString() : null,
-            calendarName: eventData.calendarName || "Unknown Calendar",
-            isAllDay: eventData.isAllDay || false,
-            url: eventData.url || null
-        }));
-        
-        return events;
+        // Single-calendar mode — fast path.
+        if (calendarName && calendarName.toLowerCase() !== 'all') {
+            const raw = await queryCalendarEvents({
+                calendarName,
+                startIso,
+                endIso,
+                limit: maxEvents,
+                searchText,
+            });
+            return raw.map(normalizeJxaCalEvent);
+        }
+
+        // Fan-out mode: search every calendar in parallel.
+        const names = await listCalendarNames();
+        const results = await Promise.allSettled(
+            names.map((n) =>
+                queryCalendarEvents({
+                    calendarName: n,
+                    startIso,
+                    endIso,
+                    limit: maxEvents,
+                    searchText,
+                }),
+            ),
+        );
+        const collected: CalendarEvent[] = [];
+        for (const r of results) {
+            if (r.status !== 'fulfilled') continue;
+            for (const evt of r.value) {
+                collected.push(normalizeJxaCalEvent(evt));
+                if (collected.length >= maxEvents) break;
+            }
+            if (collected.length >= maxEvents) break;
+        }
+        return collected;
     } catch (error) {
         console.error(`Error searching events: ${error instanceof Error ? error.message : String(error)}`);
         return [];

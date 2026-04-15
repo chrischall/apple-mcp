@@ -1,4 +1,5 @@
 import { runAppleScript } from "run-applescript";
+import { run as jxaRun } from "@jxa/run";
 
 // Configuration
 const CONFIG = {
@@ -9,6 +10,30 @@ const CONFIG = {
 	// Timeout for operations
 	TIMEOUT_MS: 10000,
 };
+
+// Shape returned by the JXA helpers below, before we normalize defaults.
+interface RawJxaEmail {
+	subject?: string;
+	sender?: string;
+	dateSent?: string;
+	content?: string;
+	isRead?: boolean;
+	mailbox?: string;
+	account?: string;
+}
+
+function normalizeJxaEmail(raw: RawJxaEmail): EmailMessage {
+	return {
+		subject: raw.subject || "No subject",
+		sender: raw.sender || "Unknown sender",
+		dateSent: raw.dateSent || new Date().toString(),
+		content: raw.content || "[Content not available]",
+		isRead: typeof raw.isRead === "boolean" ? raw.isRead : false,
+		mailbox: raw.account
+			? `${raw.account} — ${raw.mailbox || "Unknown"}`
+			: raw.mailbox || "Unknown",
+	};
+}
 
 interface EmailMessage {
 	subject: string;
@@ -67,7 +92,12 @@ async function requestMailAccess(): Promise<{ hasAccess: boolean; message: strin
 }
 
 /**
- * Get unread emails from Mail app (limited for performance)
+ * Get unread emails from Mail app via JXA.
+ *
+ * Uses `mailbox.messages.whose({readStatus: false})` for an indexed lookup
+ * — orders of magnitude faster than iterating every message in every box.
+ * The previous AppleScript implementation built a result list inside
+ * osascript but threw it away on the JS side, returning [].
  */
 async function getUnreadMails(limit = 10): Promise<EmailMessage[]> {
 	try {
@@ -78,75 +108,59 @@ async function getUnreadMails(limit = 10): Promise<EmailMessage[]> {
 
 		const maxEmails = Math.min(limit, CONFIG.MAX_EMAILS);
 
-		const script = `
-tell application "Mail"
-    set emailList to {}
-    set emailCount to 0
+		const result = await jxaRun(
+			(args: { limit: number; preview: number }) => {
+				const Mail = Application("Mail");
+				const out: RawJxaEmail[] = [];
+				const accounts = Mail.accounts();
+				outer: for (let i = 0; i < accounts.length; i++) {
+					try {
+						const accountName = accounts[i].name();
+						const boxes = accounts[i].mailboxes();
+						for (let j = 0; j < boxes.length; j++) {
+							try {
+								const msgs = boxes[j].messages.whose({ readStatus: false })();
+								const boxName = boxes[j].name();
+								for (let k = 0; k < msgs.length; k++) {
+									if (out.length >= args.limit) break outer;
+									try {
+										let content = "";
+										try {
+											content = msgs[k].content() || "";
+										} catch {
+											content = "[Content not available]";
+										}
+										if (content.length > args.preview) {
+											content = content.substring(0, args.preview) + "...";
+										}
+										out.push({
+											subject: msgs[k].subject(),
+											sender: msgs[k].sender(),
+											dateSent: msgs[k].dateSent().toISOString(),
+											content,
+											isRead: false,
+											mailbox: boxName,
+											account: accountName,
+										});
+									} catch {
+										// Skip individual messages we can't read.
+									}
+								}
+							} catch {
+								// Skip mailboxes we can't enumerate.
+							}
+						}
+					} catch {
+						// Skip accounts we can't enumerate.
+					}
+				}
+				return out;
+			},
+			{ limit: maxEmails, preview: CONFIG.MAX_CONTENT_PREVIEW },
+		);
 
-    -- Get mailboxes (limited to avoid performance issues)
-    set allMailboxes to mailboxes
-
-    repeat with i from 1 to (count of allMailboxes)
-        if emailCount >= ${maxEmails} then exit repeat
-
-        try
-            set currentMailbox to item i of allMailboxes
-            set mailboxName to name of currentMailbox
-
-            -- Get unread messages from this mailbox
-            set unreadMessages to messages of currentMailbox
-
-            repeat with j from 1 to (count of unreadMessages)
-                if emailCount >= ${maxEmails} then exit repeat
-
-                try
-                    set currentMsg to item j of unreadMessages
-
-                    -- Only process unread messages
-                    if read status of currentMsg is false then
-                        set emailSubject to subject of currentMsg
-                        set emailSender to sender of currentMsg
-                        set emailDate to (date sent of currentMsg) as string
-
-                        -- Get content with length limit
-                        set emailContent to ""
-                        try
-                            set fullContent to content of currentMsg
-                            if (length of fullContent) > ${CONFIG.MAX_CONTENT_PREVIEW} then
-                                set emailContent to (characters 1 thru ${CONFIG.MAX_CONTENT_PREVIEW} of fullContent) as string
-                                set emailContent to emailContent & "..."
-                            else
-                                set emailContent to fullContent
-                            end if
-                        on error
-                            set emailContent to "[Content not available]"
-                        end try
-
-                        set emailInfo to {subject:emailSubject, sender:emailSender, dateSent:emailDate, content:emailContent, isRead:false, mailbox:mailboxName}
-                        set emailList to emailList & {emailInfo}
-                        set emailCount to emailCount + 1
-                    end if
-                on error
-                    -- Skip problematic messages
-                end try
-            end repeat
-        on error
-            -- Skip problematic mailboxes
-        end try
-    end repeat
-
-    return "SUCCESS:" & (count of emailList)
-end tell`;
-
-		const result = (await runAppleScript(script)) as string;
-
-		if (result && result.startsWith("SUCCESS:")) {
-			// For now, return empty array as the actual email parsing from AppleScript is complex
-			// The key improvement is that we're not timing out anymore
-			return [];
-		}
-
-		return [];
+		if (!Array.isArray(result)) return [];
+		return (result as RawJxaEmail[]).map(normalizeJxaEmail);
 	} catch (error) {
 		console.error(
 			`Error getting unread emails: ${error instanceof Error ? error.message : String(error)}`,
@@ -156,11 +170,20 @@ end tell`;
 }
 
 /**
- * Search for emails by search term
+ * Search for emails by subject substring (case-insensitive).
+ *
+ * Uses JXA `whose({subject: {_contains: term}})` for an indexed lookup.
+ *
+ * Performance: with no scope, this iterates every mailbox in every account
+ * and can take minutes on accounts with many labels (e.g. Gmail). Pass
+ * `account` (and optionally `mailbox`) to scope the search down to a few
+ * seconds.
  */
 async function searchMails(
 	searchTerm: string,
 	limit = 10,
+	account?: string,
+	mailbox?: string,
 ): Promise<EmailMessage[]> {
 	try {
 		const accessResult = await requestMailAccess();
@@ -173,79 +196,79 @@ async function searchMails(
 		}
 
 		const maxEmails = Math.min(limit, CONFIG.MAX_EMAILS);
-		const cleanSearchTerm = searchTerm.toLowerCase();
 
-		const script = `
-tell application "Mail"
-    set emailList to {}
-    set emailCount to 0
-    set searchTerm to "${cleanSearchTerm}"
+		const result = await jxaRun(
+			(args: {
+				searchTerm: string;
+				limit: number;
+				preview: number;
+				account?: string;
+				mailbox?: string;
+			}) => {
+				const Mail = Application("Mail");
+				const out: RawJxaEmail[] = [];
+				const allAccounts = Mail.accounts();
+				const accounts = args.account
+					? allAccounts.filter((a: any) => a.name() === args.account)
+					: allAccounts;
+				outer: for (let i = 0; i < accounts.length; i++) {
+					try {
+						const accountName = accounts[i].name();
+						const allBoxes = accounts[i].mailboxes();
+						const boxes = args.mailbox
+							? allBoxes.filter((b: any) => b.name() === args.mailbox)
+							: allBoxes;
+						for (let j = 0; j < boxes.length; j++) {
+							try {
+								const msgs = boxes[j].messages
+									.whose({ subject: { _contains: args.searchTerm } })();
+								const boxName = boxes[j].name();
+								for (let k = 0; k < msgs.length; k++) {
+									if (out.length >= args.limit) break outer;
+									try {
+										let content = "";
+										try {
+											content = msgs[k].content() || "";
+										} catch {
+											content = "[Content not available]";
+										}
+										if (content.length > args.preview) {
+											content = content.substring(0, args.preview) + "...";
+										}
+										out.push({
+											subject: msgs[k].subject(),
+											sender: msgs[k].sender(),
+											dateSent: msgs[k].dateSent().toISOString(),
+											content,
+											isRead: msgs[k].readStatus(),
+											mailbox: boxName,
+											account: accountName,
+										});
+									} catch {
+										// Skip individual messages we can't read.
+									}
+								}
+							} catch {
+								// Skip mailboxes we can't enumerate.
+							}
+						}
+					} catch {
+						// Skip accounts we can't enumerate.
+					}
+				}
+				return out;
+			},
+			{
+				searchTerm,
+				limit: maxEmails,
+				preview: CONFIG.MAX_CONTENT_PREVIEW,
+				account,
+				mailbox,
+			},
+		);
 
-    -- Get mailboxes (limited to avoid performance issues)
-    set allMailboxes to mailboxes
-
-    repeat with i from 1 to (count of allMailboxes)
-        if emailCount >= ${maxEmails} then exit repeat
-
-        try
-            set currentMailbox to item i of allMailboxes
-            set mailboxName to name of currentMailbox
-
-            -- Get messages from this mailbox
-            set allMessages to messages of currentMailbox
-
-            repeat with j from 1 to (count of allMessages)
-                if emailCount >= ${maxEmails} then exit repeat
-
-                try
-                    set currentMsg to item j of allMessages
-                    set emailSubject to subject of currentMsg
-
-                    -- Simple case-insensitive search in subject
-                    if emailSubject contains searchTerm then
-                        set emailSender to sender of currentMsg
-                        set emailDate to (date sent of currentMsg) as string
-                        set emailRead to read status of currentMsg
-
-                        -- Get content with length limit
-                        set emailContent to ""
-                        try
-                            set fullContent to content of currentMsg
-                            if (length of fullContent) > ${CONFIG.MAX_CONTENT_PREVIEW} then
-                                set emailContent to (characters 1 thru ${CONFIG.MAX_CONTENT_PREVIEW} of fullContent) as string
-                                set emailContent to emailContent & "..."
-                            else
-                                set emailContent to fullContent
-                            end if
-                        on error
-                            set emailContent to "[Content not available]"
-                        end try
-
-                        set emailInfo to {subject:emailSubject, sender:emailSender, dateSent:emailDate, content:emailContent, isRead:emailRead, mailbox:mailboxName}
-                        set emailList to emailList & {emailInfo}
-                        set emailCount to emailCount + 1
-                    end if
-                on error
-                    -- Skip problematic messages
-                end try
-            end repeat
-        on error
-            -- Skip problematic mailboxes
-        end try
-    end repeat
-
-    return "SUCCESS:" & (count of emailList)
-end tell`;
-
-		const result = (await runAppleScript(script)) as string;
-
-		if (result && result.startsWith("SUCCESS:")) {
-			// For now, return empty array as the actual email parsing from AppleScript is complex
-			// The key improvement is that we're not timing out anymore
-			return [];
-		}
-
-		return [];
+		if (!Array.isArray(result)) return [];
+		return (result as RawJxaEmail[]).map(normalizeJxaEmail);
 	} catch (error) {
 		console.error(
 			`Error searching emails: ${error instanceof Error ? error.message : String(error)}`,
