@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "apple-mcp",
+  "owner": {
+    "name": "Chris Hall",
+    "email": "chris.c.hall@gmail.com"
+  },
+  "metadata": {
+    "description": "Apple MCP server — contacts, notes, messages, mail, reminders, calendar, maps on macOS",
+    "version": "2.0.3"
+  },
+  "plugins": [
+    {
+      "name": "apple-mcp",
+      "displayName": "Apple MCP",
+      "source": "./",
+      "description": "Apple MCP server for Claude — contacts, notes, messages, mail, reminders, calendar, and maps integration on macOS",
+      "version": "2.0.3",
+      "author": {
+        "name": "Chris Hall"
+      },
+      "homepage": "https://github.com/chrischall/apple-mcp",
+      "repository": "https://github.com/chrischall/apple-mcp",
+      "license": "MIT",
+      "keywords": ["apple", "macos", "contacts", "notes", "messages", "mail", "calendar", "reminders", "maps", "mcp"],
+      "category": "productivity"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "apple-mcp",
+  "displayName": "Apple MCP",
+  "version": "2.0.3",
+  "description": "Apple MCP server for Claude — contacts, notes, messages, mail, reminders, calendar, and maps integration on macOS",
+  "author": {
+    "name": "Chris Hall",
+    "email": "chris.c.hall@gmail.com"
+  },
+  "homepage": "https://github.com/chrischall/apple-mcp",
+  "repository": "https://github.com/chrischall/apple-mcp",
+  "license": "MIT",
+  "keywords": ["apple", "macos", "contacts", "notes", "messages", "mail", "calendar", "reminders", "maps", "mcp"],
+  "skills": "./SKILL.md",
+  "mcp": "./.mcp.json"
+}
