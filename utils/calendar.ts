@@ -380,47 +380,79 @@ async function createEvent(
             };
         }
 
-        console.error(`createEvent - Attempting to create event: "${title}"`);
+        // Resolve the target calendar. Precedence:
+        //   1. Explicit calendarName argument
+        //   2. APPLE_MCP_DEFAULT_CALENDAR env var
+        //   3. (no fallback) — error out with the list of available calendars
+        //
+        // The previous behavior was to silently fall back to `first calendar`
+        // on any error, which on typical systems meant events landed in
+        // whatever came first alphabetically (e.g. "Test-Claude-Calendar").
+        // That's a footgun; we'd rather force the caller to pick.
+        const targetCalendar =
+            (calendarName && calendarName.trim())
+            || (process.env.APPLE_MCP_DEFAULT_CALENDAR && process.env.APPLE_MCP_DEFAULT_CALENDAR.trim())
+            || null;
 
-        const targetCalendar = calendarName || "Calendar";
-        
+        if (!targetCalendar) {
+            const names = await listCalendarNames().catch(() => []);
+            return {
+                success: false,
+                message:
+                    `No calendar specified. Available calendars: ${names.length ? names.map((n) => `"${n}"`).join(", ") : "(unable to list)"}. ` +
+                    `Pass a calendarName, or set the APPLE_MCP_DEFAULT_CALENDAR environment variable to choose a default.`,
+            };
+        }
+
+        console.error(`createEvent - Attempting to create event: "${title}" in "${targetCalendar}"`);
+
         const script = `
 tell application "Calendar"
     set startDate to date "${start.toLocaleString()}"
     set endDate to date "${end.toLocaleString()}"
-    
-    -- Find target calendar
-    set targetCal to null
-    try
-        set targetCal to calendar "${targetCalendar}"
-    on error
-        -- Use first available calendar
-        set targetCal to first calendar
-    end try
-    
+
+    -- Find target calendar. No silent fallback: error out if not found so
+    -- the caller sees a clear message and can pick a different calendar.
+    set targetCal to calendar "${targetCalendar.replace(/"/g, '\\"')}"
+
     -- Create the event
     tell targetCal
         set newEvent to make new event with properties {summary:"${title.replace(/"/g, '\\"')}", start date:startDate, end date:endDate, allday event:${isAllDay}}
-        
+
         if "${location || ""}" ≠ "" then
             set location of newEvent to "${(location || '').replace(/"/g, '\\"')}"
         end if
-        
+
         if "${notes || ""}" ≠ "" then
             set description of newEvent to "${(notes || '').replace(/"/g, '\\"')}"
         end if
-        
+
         return uid of newEvent
     end tell
 end tell`;
 
-        const eventId = await runAppleScript(script) as string;
-        
-        return {
-            success: true,
-            message: `Event "${title}" created successfully.`,
-            eventId: eventId
-        };
+        try {
+            const eventId = await runAppleScript(script) as string;
+            return {
+                success: true,
+                message: `Event "${title}" created successfully in "${targetCalendar}".`,
+                eventId: eventId,
+            };
+        } catch (error) {
+            // AppleScript failure usually means calendar-not-found. Pair the
+            // error with the list of valid calendar names to unblock the
+            // caller.
+            const errMsg = error instanceof Error ? error.message : String(error);
+            const names = await listCalendarNames().catch(() => []);
+            return {
+                success: false,
+                message:
+                    `Failed to create event in "${targetCalendar}": ${errMsg}. ` +
+                    (names.length
+                        ? `Available calendars: ${names.map((n) => `"${n}"`).join(", ")}.`
+                        : ""),
+            };
+        }
     } catch (error) {
         return {
             success: false,
@@ -608,13 +640,31 @@ end tell`;
     }
 }
 
+/**
+ * List the names of every calendar known to Calendar.app. Fast (~700ms).
+ * Useful for discovering calendar names to pass as `calendarName`.
+ */
+async function listCalendars(): Promise<string[]> {
+    try {
+        const accessResult = await requestCalendarAccess();
+        if (!accessResult.hasAccess) {
+            return [];
+        }
+        return await listCalendarNames();
+    } catch (error) {
+        console.error(`Error listing calendars: ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+    }
+}
+
 const calendar = {
     searchEvents,
     openEvent,
     getEvents,
     createEvent,
     updateEvent,
-    requestCalendarAccess
+    listCalendars,
+    requestCalendarAccess,
 };
 
 export default calendar;

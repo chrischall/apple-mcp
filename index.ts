@@ -867,7 +867,7 @@ end tell`;
 	server.registerTool("calendar", {
 		description: "Search, create, update, and open calendar events in Apple Calendar app. PERFORMANCE: pass `calendarName` for 'list'/'search' to scope to a single calendar (~8s). Without it, the query fans out across every calendar and Calendar.app serializes AppleScript requests internally, so wall time is ~60-90s. Use 'list' with no `calendarName` sparingly; prefer naming the calendar you care about.",
 		inputSchema: {
-			operation: z.enum(["search", "open", "list", "create", "update"]).describe("Operation to perform: 'search', 'open', 'list', 'create', or 'update'"),
+			operation: z.enum(["search", "open", "list", "create", "update", "calendars"]).describe("Operation to perform: 'search', 'open', 'list', 'create', 'update', or 'calendars' (list available calendar names)"),
 			searchText: z.string().optional().describe("Text to search for in event titles, locations, and notes (required for search operation)"),
 			eventId: z.string().optional().describe("ID of the event to open (required for open operation)"),
 			limit: z.number().optional().describe("Number of events to retrieve (optional, default 10)"),
@@ -879,7 +879,7 @@ end tell`;
 			location: z.string().optional().describe("Location of the event (optional for create operation)"),
 			notes: z.string().optional().describe("Additional notes for the event (optional for create operation)"),
 			isAllDay: z.boolean().optional().describe("Whether the event is an all-day event (optional for create operation, default is false)"),
-			calendarName: z.string().optional().describe("Calendar name to scope the operation to. For 'list'/'search', restricts to a single calendar (much faster than querying all). Pass 'all' to fan out across every calendar in parallel. For 'create', selects which calendar to add the event to."),
+			calendarName: z.string().optional().describe("Calendar name to scope the operation to. For 'list'/'search', restricts to a single calendar (much faster than querying all); pass 'all' to fan out across every calendar. For 'create'/'update', selects which calendar to write to — REQUIRED unless APPLE_MCP_DEFAULT_CALENDAR is set. Use operation='calendars' to discover available names."),
 		},
 	}, async (args) => {
 		try {
@@ -995,6 +995,21 @@ end tell`;
 							},
 						],
 						isError: !result.success,
+					};
+				}
+
+				case "calendars": {
+					const names = await calendarModule.listCalendars();
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text:
+									names.length > 0
+										? `Found ${names.length} calendars:\n\n${names.map((n) => `  - ${n}`).join("\n")}`
+										: "No calendars found. Make sure Calendar access is granted.",
+							},
+						],
 					};
 				}
 

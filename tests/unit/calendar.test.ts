@@ -252,9 +252,11 @@ describe("calendar.searchEvents", () => {
 describe("calendar.createEvent", () => {
 	beforeEach(() => {
 		mockRunAppleScript.mockReset();
+		mockJxaRun.mockReset();
+		delete process.env.APPLE_MCP_DEFAULT_CALENDAR;
 	});
 
-	it("should create an event successfully", async () => {
+	it("should create an event successfully when calendarName is given", async () => {
 		mockRunAppleScript
 			.mockResolvedValueOnce("Calendar") // access check
 			.mockResolvedValueOnce("new-uid-abc"); // create script returns uid
@@ -263,6 +265,10 @@ describe("calendar.createEvent", () => {
 			"Lunch with Alice",
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(true);
@@ -282,6 +288,8 @@ describe("calendar.createEvent", () => {
 			"2026-05-01T17:00:00.000Z",
 			"HQ Conference Room",
 			"Bring presentations",
+			false,
+			"Work",
 		);
 
 		const script = mockRunAppleScript.mock.calls[1][0] as string;
@@ -302,6 +310,7 @@ describe("calendar.createEvent", () => {
 			undefined,
 			undefined,
 			true,
+			"Work",
 		);
 
 		expect(result.success).toBe(true);
@@ -335,6 +344,10 @@ describe("calendar.createEvent", () => {
 			"  ",
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -348,6 +361,10 @@ describe("calendar.createEvent", () => {
 			"Test Event",
 			"not-a-date",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -361,6 +378,10 @@ describe("calendar.createEvent", () => {
 			"Test Event",
 			"2026-04-20T12:00:00.000Z",
 			"garbage",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -374,6 +395,10 @@ describe("calendar.createEvent", () => {
 			"Test Event",
 			"2026-04-20T14:00:00.000Z",
 			"2026-04-20T12:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -387,6 +412,10 @@ describe("calendar.createEvent", () => {
 			"Test Event",
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T12:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -400,6 +429,10 @@ describe("calendar.createEvent", () => {
 			"Test Event",
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		expect(result.success).toBe(false);
@@ -409,11 +442,17 @@ describe("calendar.createEvent", () => {
 		mockRunAppleScript
 			.mockResolvedValueOnce("Calendar")
 			.mockRejectedValueOnce(new Error("calendar not found"));
+		// After create fails, we list calendars to produce a helpful error.
+		mockJxaRun.mockResolvedValueOnce(["Erik", "Personal", "Work"]);
 
 		const result = await calendarModule.createEvent(
 			"Test Event",
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Nonexistent",
 		);
 
 		expect(result.success).toBe(false);
@@ -429,10 +468,98 @@ describe("calendar.createEvent", () => {
 			'Meeting with "Bob"',
 			"2026-04-20T12:00:00.000Z",
 			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Personal",
 		);
 
 		const script = mockRunAppleScript.mock.calls[1][0] as string;
 		expect(script).toContain('Meeting with \\"Bob\\"');
+	});
+
+	it("should return an error listing available calendars when none is specified and no env default is set", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Calendar"); // access check
+		mockJxaRun.mockResolvedValueOnce(["Erik", "Personal", "Work"]);
+
+		const result = await calendarModule.createEvent(
+			"Test Event",
+			"2026-04-20T12:00:00.000Z",
+			"2026-04-20T13:00:00.000Z",
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.message).toMatch(/no calendar specified/i);
+		expect(result.message).toContain("Erik");
+		expect(result.message).toContain("Personal");
+		expect(result.message).toContain("Work");
+		// Must NOT silently pick "first calendar" (the original bug).
+		expect(mockRunAppleScript).toHaveBeenCalledTimes(1);
+	});
+
+	it("should use APPLE_MCP_DEFAULT_CALENDAR env var when no calendarName is given", async () => {
+		process.env.APPLE_MCP_DEFAULT_CALENDAR = "Erik";
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockResolvedValueOnce("uid-env");
+
+		const result = await calendarModule.createEvent(
+			"Test Event",
+			"2026-04-20T12:00:00.000Z",
+			"2026-04-20T13:00:00.000Z",
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.eventId).toBe("uid-env");
+		const script = mockRunAppleScript.mock.calls[1][0] as string;
+		expect(script).toContain('calendar "Erik"');
+	});
+
+	it("explicit calendarName should override APPLE_MCP_DEFAULT_CALENDAR", async () => {
+		process.env.APPLE_MCP_DEFAULT_CALENDAR = "Erik";
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockResolvedValueOnce("uid-explicit");
+
+		await calendarModule.createEvent(
+			"Test Event",
+			"2026-04-20T12:00:00.000Z",
+			"2026-04-20T13:00:00.000Z",
+			undefined,
+			undefined,
+			false,
+			"Work",
+		);
+
+		const script = mockRunAppleScript.mock.calls[1][0] as string;
+		expect(script).toContain('calendar "Work"');
+		expect(script).not.toContain('calendar "Erik"');
+	});
+});
+
+// ─── listCalendars ──────────────────────────────────────────────────────────
+
+describe("calendar.listCalendars", () => {
+	beforeEach(() => {
+		mockRunAppleScript.mockReset();
+		mockJxaRun.mockReset();
+	});
+
+	it("should return the list of calendar names", async () => {
+		mockRunAppleScript.mockResolvedValueOnce("Calendar");
+		mockJxaRun.mockResolvedValueOnce(["Erik", "Personal", "Work"]);
+
+		const result = await calendarModule.listCalendars();
+
+		expect(result).toEqual(["Erik", "Personal", "Work"]);
+	});
+
+	it("should return empty array when access is denied", async () => {
+		mockRunAppleScript.mockRejectedValueOnce(new Error("access denied"));
+
+		const result = await calendarModule.listCalendars();
+
+		expect(result).toEqual([]);
 	});
 });
 
