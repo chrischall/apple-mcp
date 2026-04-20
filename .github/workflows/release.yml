@@ -62,6 +62,20 @@ jobs:
           bun run pack
           mv apple-mcp.mcpb "apple-mcp-${VERSION}.mcpb"
 
+      # ─── ClawHub (OpenClaw skill registry) — conditional on CLAWHUB_TOKEN ───
+      # apple-mcp's npm name is owned elsewhere, so we skip the MCP Registry
+      # publish (which requires npm package ownership verification).
+      - name: Publish skill to ClawHub
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            echo "CLAWHUB_TOKEN not set — skipping ClawHub publish."
+            exit 0
+          fi
+          npx --yes clawhub login --token "$CLAWHUB_TOKEN"
+          npx --yes clawhub skill publish . --version "${VERSION}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.0
         with:
