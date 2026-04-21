@@ -74,13 +74,10 @@ jobs:
             echo "CLAWHUB_TOKEN not set — skipping ClawHub publish."
             exit 0
           fi
-          # ClawHub CLI surface appears to have changed ('publish' no longer
-          # a subcommand). Best-effort so a broken registry publish can't
-          # block the GitHub Release step. Update when the current command
-          # is known.
+          # ClawHub CLI v0.9.0+ flattened `skill publish` to top-level `publish`.
+          # Keep the `|| echo` safety so a ClawHub outage can't block the GH Release.
           npx --yes clawhub login --token "$CLAWHUB_TOKEN" || true
-          npx --yes clawhub skill publish . --version "${VERSION}" \
-            || npx --yes clawhub publish . --version "${VERSION}" \
+          npx --yes clawhub publish . --version "${VERSION}" \
             || echo "ClawHub publish failed — continuing with GitHub Release."
 
       - name: Create GitHub Release
