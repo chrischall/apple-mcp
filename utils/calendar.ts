@@ -521,7 +521,7 @@ async function updateEvent(
         isAllDay?: boolean;
         calendarName?: string;
     }
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; eventId?: string }> {
     try {
         if (!eventId || !eventId.trim()) {
             return {
@@ -580,46 +580,158 @@ async function updateEvent(
 
         console.error(`updateEvent - Attempting to update event: "${eventId}"`);
 
-        // Build property assignments for only the provided fields
-        const propertyLines: string[] = [];
-        if (fields.title !== undefined) {
-            propertyLines.push(`set summary of targetEvent to "${fields.title.replace(/"/g, '\\"')}"`);
-        }
-        if (fields.location !== undefined) {
-            propertyLines.push(`set location of targetEvent to "${fields.location.replace(/"/g, '\\"')}"`);
-        }
-        if (fields.notes !== undefined) {
-            propertyLines.push(`set description of targetEvent to "${fields.notes.replace(/"/g, '\\"')}"`);
-        }
-        if (fields.startDate !== undefined) {
-            const start = new Date(fields.startDate);
-            propertyLines.push(`set start date of targetEvent to date "${start.toLocaleString()}"`);
-        }
-        if (fields.endDate !== undefined) {
-            const end = new Date(fields.endDate);
-            propertyLines.push(`set end date of targetEvent to date "${end.toLocaleString()}"`);
-        }
-        if (fields.isAllDay !== undefined) {
-            propertyLines.push(`set allday event of targetEvent to ${fields.isAllDay}`);
-        }
-
-        const script = `
+        // ─── Step 1: find the source event's calendar name ────────────────
+        // We need this to decide whether calendarName means "move" or
+        // "in-place update in the same calendar". Calendar.app rejects
+        // `set calendar of event`, so a move requires copy+delete.
+        let sourceCalName: string;
+        try {
+            sourceCalName = (await runAppleScript(`
 tell application "Calendar"
-    set targetEvent to missing value
-
     repeat with cal in calendars
         try
-            set theEvents to (every event of cal whose uid is "${eventId}")
-            if (count of theEvents) > 0 then
-                set targetEvent to item 1 of theEvents
-                exit repeat
+            set evs to (every event of cal whose uid is "${eventId.replace(/"/g, '\\"')}")
+            if (count of evs) > 0 then
+                return name of cal
             end if
         end try
     end repeat
+    error "Event not found with ID: ${eventId.replace(/"/g, '\\"')}"
+end tell`)) as string;
+        } catch (error) {
+            return {
+                success: false,
+                message: `Event not found with ID "${eventId}".`,
+            };
+        }
 
-    if targetEvent is missing value then
+        const requestedTarget = fields.calendarName?.trim();
+        const isMove = requestedTarget && requestedTarget !== sourceCalName;
+
+        // ─── Step 2a: move (copy+delete) ───────────────────────────────────
+        if (isMove) {
+            // Build override expressions. If the caller provided a field, use
+            // it; otherwise let the AppleScript read the value from srcEvent.
+            const esc = (s: string) => s.replace(/"/g, '\\"');
+            const titleExpr = fields.title !== undefined
+                ? `"${esc(fields.title)}"` : "summary of srcEvent";
+            const startExpr = fields.startDate !== undefined
+                ? `date "${new Date(fields.startDate).toLocaleString()}"` : "start date of srcEvent";
+            const endExpr = fields.endDate !== undefined
+                ? `date "${new Date(fields.endDate).toLocaleString()}"` : "end date of srcEvent";
+            const allDayExpr = fields.isAllDay !== undefined
+                ? String(fields.isAllDay) : "allday event of srcEvent";
+            const locationExpr = fields.location !== undefined
+                ? `"${esc(fields.location)}"` : "srcLocation";
+            const notesExpr = fields.notes !== undefined
+                ? `"${esc(fields.notes)}"` : "srcNotes";
+
+            const escSrcCal = sourceCalName.replace(/"/g, '\\"');
+            const moveScript = `
+tell application "Calendar"
+    set srcCal to calendar "${escSrcCal}"
+    set evs to (every event of srcCal whose uid is "${eventId.replace(/"/g, '\\"')}")
+    if (count of evs) is 0 then
+        error "Event not found with ID: ${eventId.replace(/"/g, '\\"')}"
+    end if
+    set srcEvent to item 1 of evs
+
+    -- Capture optional source fields that may not be set.
+    set srcLocation to ""
+    try
+        set srcLocation to location of srcEvent
+        if srcLocation is missing value then set srcLocation to ""
+    end try
+    set srcNotes to ""
+    try
+        set srcNotes to description of srcEvent
+        if srcNotes is missing value then set srcNotes to ""
+    end try
+
+    -- Resolve final field values (provided-or-source).
+    set newTitle to ${titleExpr}
+    set newStart to ${startExpr}
+    set newEnd to ${endExpr}
+    set newAllDay to ${allDayExpr}
+    set newLocation to ${locationExpr}
+    set newNotes to ${notesExpr}
+
+    set destCal to calendar "${esc(requestedTarget!)}"
+    set newUid to ""
+    tell destCal
+        set newEv to make new event with properties {summary:newTitle, start date:newStart, end date:newEnd, allday event:newAllDay}
+        if newLocation is not "" and newLocation is not missing value then
+            set location of newEv to newLocation
+        end if
+        if newNotes is not "" and newNotes is not missing value then
+            set description of newEv to newNotes
+        end if
+        set newUid to uid of newEv
+    end tell
+
+    delete srcEvent
+    return newUid
+end tell`;
+
+            try {
+                const newUid = (await runAppleScript(moveScript)) as string;
+                return {
+                    success: true,
+                    message: `Event moved from "${sourceCalName}" to "${requestedTarget}" (new eventId: ${newUid.trim()}). Note: attendees, alarms, and recurrence rules are not copied by this move.`,
+                    eventId: newUid.trim(),
+                };
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
+                return {
+                    success: false,
+                    message: `Failed to move event: ${msg}`,
+                };
+            }
+        }
+
+        // ─── Step 2b: in-place update (existing behavior) ──────────────────
+        // Use `set properties of targetEvent to {...}` so start/end change
+        // atomically — otherwise Calendar rejects intermediate states where
+        // start > end (e.g. moving a window forward: new start lands after
+        // the old end date and Calendar errors with "start date must be
+        // before end date" before we get to set the new end).
+        const propsRecordParts: string[] = [];
+        if (fields.title !== undefined) {
+            propsRecordParts.push(`summary:"${fields.title.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.location !== undefined) {
+            propsRecordParts.push(`location:"${fields.location.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.notes !== undefined) {
+            propsRecordParts.push(`description:"${fields.notes.replace(/"/g, '\\"')}"`);
+        }
+        if (fields.startDate !== undefined) {
+            const start = new Date(fields.startDate);
+            propsRecordParts.push(`start date:date "${start.toLocaleString()}"`);
+        }
+        if (fields.endDate !== undefined) {
+            const end = new Date(fields.endDate);
+            propsRecordParts.push(`end date:date "${end.toLocaleString()}"`);
+        }
+        if (fields.isAllDay !== undefined) {
+            propsRecordParts.push(`allday event:${fields.isAllDay}`);
+        }
+        const propertyLines: string[] = propsRecordParts.length
+            ? [`set properties of targetEvent to {${propsRecordParts.join(", ")}}`]
+            : [];
+
+        // We already know the event's calendar from the find-source step —
+        // scope the update script to just that calendar to avoid a second
+        // slow iteration across every (potentially subscribed/slow) calendar.
+        const escSource = sourceCalName.replace(/"/g, '\\"');
+        const script = `
+tell application "Calendar"
+    set srcCal to calendar "${escSource}"
+    set theEvents to (every event of srcCal whose uid is "${eventId.replace(/"/g, '\\"')}")
+    if (count of theEvents) is 0 then
         error "Event not found with ID: ${eventId}"
     end if
+    set targetEvent to item 1 of theEvents
 
     ${propertyLines.join("\n    ")}
 
@@ -630,7 +742,8 @@ end tell`;
 
         return {
             success: true,
-            message: `Event "${eventId}" updated successfully.`
+            message: `Event "${eventId}" updated successfully.`,
+            eventId,
         };
     } catch (error) {
         return {

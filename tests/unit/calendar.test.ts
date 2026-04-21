@@ -537,6 +537,110 @@ describe("calendar.createEvent", () => {
 	});
 });
 
+// ─── updateEvent move (calendarName differs from source) ───────────────────
+
+describe("calendar.updateEvent — move semantics", () => {
+	beforeEach(() => {
+		mockRunAppleScript.mockReset();
+		mockJxaRun.mockReset();
+	});
+
+	it("should update in place when calendarName matches the source calendar", async () => {
+		// 1) access check, 2) find-source returns source cal name, 3) in-place update
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar") // access check
+			.mockResolvedValueOnce("Erik") // find source calendar name
+			.mockResolvedValueOnce("updated"); // in-place update script
+
+		const result = await calendarModule.updateEvent("uid-abc", {
+			title: "New Title",
+			calendarName: "Erik",
+		});
+
+		expect(result.success).toBe(true);
+		// Last script should be in-place update, not move
+		const updateScript = mockRunAppleScript.mock.calls[2][0] as string;
+		expect(updateScript).toContain("set properties of targetEvent");
+		expect(updateScript).toContain('summary:"New Title"');
+		expect(updateScript).not.toContain("make new event");
+		expect(updateScript).not.toContain("delete");
+	});
+
+	it("should move (copy+delete) when calendarName differs from source", async () => {
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockResolvedValueOnce("Test-Claude-Calendar") // source is here
+			.mockResolvedValueOnce("new-uid-xyz"); // move script returns new uid
+
+		const result = await calendarModule.updateEvent("uid-abc", {
+			calendarName: "Erik",
+		});
+
+		expect(result.success).toBe(true);
+		expect(result.eventId).toBe("new-uid-xyz");
+		expect(result.message).toMatch(/moved/i);
+		expect(result.message).toContain("Erik");
+
+		const moveScript = mockRunAppleScript.mock.calls[2][0] as string;
+		expect(moveScript).toContain("make new event");
+		expect(moveScript).toContain("delete");
+		expect(moveScript).toContain('calendar "Erik"');
+	});
+
+	it("should apply field overrides on top of source values when moving", async () => {
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockResolvedValueOnce("Test-Claude-Calendar") // source
+			.mockResolvedValueOnce("new-uid-2");
+
+		await calendarModule.updateEvent("uid-abc", {
+			calendarName: "Erik",
+			title: "Moved + renamed",
+			startDate: "2026-06-01T10:00:00.000Z",
+			endDate: "2026-06-01T11:00:00.000Z",
+		});
+
+		const moveScript = mockRunAppleScript.mock.calls[2][0] as string;
+		// Overrides explicitly appear in the script
+		expect(moveScript).toContain("Moved + renamed");
+		// Start/end overrides come through (dates are formatted via toLocaleString,
+		// so just check the years/day appear)
+		expect(moveScript).toMatch(/2026/);
+	});
+
+	it("should preserve source values for fields not explicitly overridden", async () => {
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockResolvedValueOnce("Test-Claude-Calendar")
+			.mockResolvedValueOnce("new-uid-3");
+
+		await calendarModule.updateEvent("uid-abc", {
+			calendarName: "Erik",
+			// only calendar changes; title/dates/etc should pull from source
+		});
+
+		const moveScript = mockRunAppleScript.mock.calls[2][0] as string;
+		// The script should reference the source event's summary/start/end rather
+		// than hardcoded JS-side values.
+		expect(moveScript).toContain("summary of srcEvent");
+		expect(moveScript).toContain("start date of srcEvent");
+		expect(moveScript).toContain("end date of srcEvent");
+	});
+
+	it("should return failure if source event not found", async () => {
+		mockRunAppleScript
+			.mockResolvedValueOnce("Calendar")
+			.mockRejectedValueOnce(new Error("Event not found"));
+
+		const result = await calendarModule.updateEvent("nonexistent-uid", {
+			calendarName: "Erik",
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.message).toMatch(/not found/i);
+	});
+});
+
 // ─── listCalendars ──────────────────────────────────────────────────────────
 
 describe("calendar.listCalendars", () => {
