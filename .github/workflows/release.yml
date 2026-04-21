@@ -68,13 +68,20 @@ jobs:
       - name: Publish skill to ClawHub
         env:
           CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        continue-on-error: true
         run: |
           if [ -z "$CLAWHUB_TOKEN" ]; then
             echo "CLAWHUB_TOKEN not set — skipping ClawHub publish."
             exit 0
           fi
-          npx --yes clawhub login --token "$CLAWHUB_TOKEN"
-          npx --yes clawhub skill publish . --version "${VERSION}"
+          # ClawHub CLI surface appears to have changed ('publish' no longer
+          # a subcommand). Best-effort so a broken registry publish can't
+          # block the GitHub Release step. Update when the current command
+          # is known.
+          npx --yes clawhub login --token "$CLAWHUB_TOKEN" || true
+          npx --yes clawhub skill publish . --version "${VERSION}" \
+            || npx --yes clawhub publish . --version "${VERSION}" \
+            || echo "ClawHub publish failed — continuing with GitHub Release."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3.0.0
